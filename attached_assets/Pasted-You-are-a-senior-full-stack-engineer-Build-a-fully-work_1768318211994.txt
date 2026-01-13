@@ -1,0 +1,181 @@
+You are a senior full-stack engineer.
+
+Build a fully working Fixed Asset Management demo web application
+that works on both desktop and mobile screens, with an iOS-style UI,
+and uses Excel files as the backend database (no real authentication services).
+
+This app is for top-management demonstration, so it must look
+production-grade but remain simple, safe, and editable.
+
+========================
+TECH STACK (MANDATORY)
+========================
+Frontend:
+- React
+- Ionic React (force iOS mode UI)
+- Ionicons
+- Mobile-first responsive layout
+
+Backend:
+- Node.js
+- Express.js
+- ExcelJS for reading/writing Excel
+- node-cron for automation
+
+No external authentication systems.
+No real email servers (simulate notifications).
+
+========================
+DATA SOURCE
+========================
+Use Excel files stored in /data folder as the ONLY database.
+All UI actions must read/write to Excel.
+
+Excel files:
+- assets.xlsx
+- users.xlsx
+- branches.xlsx
+- approvals.xlsx
+- gatepass.xlsx
+- reconciliation.xlsx
+- audit_log.xlsx
+
+Excel is the single source of truth.
+Editing Excel should reflect immediately in UI.
+
+========================
+ROLES (SIMULATED LOGIN)
+========================
+Login page should allow selecting a user from users.xlsx.
+Role is auto-detected.
+
+Roles:
+1. Branch User (Admin SPOC)
+2. Manager
+3. Admin
+
+========================
+CORE ASSET FIELDS
+========================
+Each asset must include:
+- Asset Name
+- Asset Type
+- Tag Number (unique)
+- Date of Purchase
+- Warranty End Date
+- AMC Start Date
+- AMC End Date
+- Asset Expiry Date
+- Depreciation Method
+- Depreciation %
+- Closing Depreciation Value
+- Branch Name
+- Branch Code
+- Branch User
+- Asset Status (Active / Disposal)
+- Mapped Employee Code (optional)
+
+========================
+FUNCTIONAL REQUIREMENTS
+========================
+
+1. DASHBOARD (ACTIONABLE FIRST)
+- Cards for:
+  - Assets expiring within 30 days
+  - AMC due
+  - Disposal in progress
+  - New assets added
+  - Monthly reconciliation pending
+- Clicking a card filters asset list
+
+2. ASSET MANAGEMENT
+- View all assets based on role scope
+- Add / Edit / View assets
+- Excel updated instantly
+
+3. ASSET ASSIGNMENT WORKFLOW
+- Branch User assigns asset to employee
+- Status = Pending Approval
+- Admin approves or rejects
+- If rejected → asset auto-assigned back to Branch User
+
+4. EXPIRY & AMC AUTOMATION
+- Daily cron check
+- If expiry or AMC ≤ 30 days:
+  - Show dashboard alert
+  - Log notification (simulate email)
+
+5. DISPOSAL FLOW
+- Branch initiates disposal
+- Admin approves
+- Status becomes Disposal
+- Disposed assets are read-only
+
+6. TRANSFER & GATE PASS
+- Branch-to-branch asset transfer
+- Auto generate Gate Pass ID
+- Save to gatepass.xlsx
+- Allow PDF download
+
+7. MONTHLY RECONCILIATION
+- System generates reconciliation entry
+- Branch User digitally accepts
+- Saved to reconciliation.xlsx
+- Logged in audit_log.xlsx
+
+8. AUTO-REASSIGNMENT RULE
+If a mapped employee becomes inactive:
+- Asset must be auto-unmapped
+- Branch User becomes custodian
+
+9. MANAGER FEATURES
+- View multiple branches
+- Skip-level overview
+- Emergency takeover of branch actions
+- Delegate branch SPOC temporarily
+
+10. ADMIN FEATURES
+- Global dashboard
+- Approve all actions
+- Add / dispose assets
+- Manage branch users
+
+========================
+UI REQUIREMENTS
+========================
+- iOS-style cards, lists, modals
+- Bottom tab navigation for mobile
+- Sidebar navigation for desktop
+- Clean Apple-like design
+- Fast, smooth transitions
+
+========================
+AUDIT & LOGGING
+========================
+Every action must write to audit_log.xlsx with:
+- Timestamp
+- User
+- Action
+- Asset ID
+- Remarks
+
+========================
+PROJECT STRUCTURE
+========================
+Create:
+- frontend/ (React + Ionic)
+- backend/ (Node + Express)
+- data/ (Excel files)
+
+========================
+OUTPUT EXPECTATION
+========================
+Generate:
+1. Complete project folder structure
+2. Backend APIs with Excel read/write
+3. Frontend screens wired to APIs
+4. Sample Excel templates
+5. Clear instructions to run the app in Replit
+
+This must be runnable immediately after installation.
+Do NOT leave placeholders or TODOs.
