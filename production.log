@@ -1,0 +1,2 @@
+5:50:07 PM [express] serving on port 5000
+5:50:13 PM [express] GET /api/assets 304 in 25ms :: [{"name":"Dell Monitor 27\"","type":"Peripheral","tagNumber":"TAG-004","purchaseDate":"2024-02-20","warrantyEnd":"2027-02-20","branchName":"New York HQ","branchCode":"HQ","branchUser":"admin","status":"Active","mappedEmployee":"EMP004","id":4}]

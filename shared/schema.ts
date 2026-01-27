@@ -53,11 +53,86 @@ export const gatePasses = pgTable("gate_passes", {
   status: text("status").notNull(),
 });
 
+// Roles (Dynamic Role Management)
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(), // "HO", "Admin", "Manager", "Branch User"
+  description: text("description"),
+  // Asset Management Permissions
+  assetCreation: text("asset_creation").default("false"),
+  assetModification: text("asset_modification").default("false"),
+  assetDeletion: text("asset_deletion").default("false"),
+  assetConfirmation: text("asset_confirmation").default("false"),
+  // Disposal Workflow
+  initiateDisposal: text("initiate_disposal").default("false"),
+  approveDisposal: text("approve_disposal").default("false"),
+  // Transfer Workflow
+  initiateTransfer: text("initiate_transfer").default("false"),
+  approveTransfer: text("approve_transfer").default("false"),
+  // Payables
+  createAgreement: text("create_agreement").default("false"),
+  approveAgreement: text("approve_agreement").default("false"),
+  createBill: text("create_bill").default("false"),
+  approveBill: text("approve_bill").default("false"),
+  // Role Management (HO only)
+  manageRoles: text("manage_roles").default("false"),
+});
+
+// Payables - Agreements
+export const agreements = pgTable("agreements", {
+  id: serial("id").primaryKey(),
+  contractId: text("contract_id").notNull().unique(),
+  type: text("type"),
+  vendorName: text("vendor_name"),
+  billType: text("bill_type"),
+  branchCode: text("branch_code").notNull(),
+  agreementDate: text("agreement_date"),
+  renewalDate: text("renewal_date"),
+  amount: integer("amount"),
+  description: text("description"),
+  status: text("status").default("Active"),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+// Payables - Bills
+export const bills = pgTable("bills", {
+  id: serial("id").primaryKey(),
+  billNo: text("bill_no").notNull(),
+  branchCode: text("branch_code").notNull(),
+  billType: text("bill_type").notNull(),
+  vendorId: text("vendor_id"),
+  vendorName: text("vendor_name"),
+  contractId: text("contract_id"),
+  amount: integer("amount").notNull(),
+  billDate: text("bill_date").notNull(),
+  monthYear: text("month_year"),
+  billedFromDate: text("billed_from_date"),
+  billedToDate: text("billed_to_date"),
+  billedToWhom: text("billed_to_whom"),
+  dueDate: text("due_date"),
+  priority: text("priority"),
+  modeOfPayment: text("mode_of_payment"),
+  paymentStatus: text("payment_status").default("Unpaid"),
+  paymentScheduledDate: text("payment_scheduled_date"),
+  isException: text("is_exception").default("No"),
+  exceptionReason: text("exception_reason"),
+  // Approval workflow fields
+  approvalStatus: text("approval_status").notNull().default("Pending"),
+  approverID: integer("approver_id"),
+  approvedBy: text("approved_by"),
+  approvedAt: text("approved_at"),
+  rejectionReason: text("rejection_reason"),
+});
+
 // Schemas
 export const insertAssetSchema = createInsertSchema(assets).omit({ id: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true });
 export const insertGatePassSchema = createInsertSchema(gatePasses).omit({ id: true });
+export const insertRoleSchema = createInsertSchema(roles).omit({ id: true });
+export const insertAgreementSchema = createInsertSchema(agreements).omit({ id: true });
+export const insertBillSchema = createInsertSchema(bills).omit({ id: true });
 
 // Types
 export type Asset = typeof assets.$inferSelect;
@@ -66,5 +141,11 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type GatePass = typeof gatePasses.$inferSelect;
+export type Role = typeof roles.$inferSelect;
+export type InsertRole = z.infer<typeof insertRoleSchema>;
+export type Agreement = typeof agreements.$inferSelect;
+export type InsertAgreement = z.infer<typeof insertAgreementSchema>;
+export type Bill = typeof bills.$inferSelect;
+export type InsertBill = z.infer<typeof insertBillSchema>;
 
 export type LoginRequest = { username: string }; // Simplified login

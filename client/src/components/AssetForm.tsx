@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useAuthStore, useUsers } from "@/hooks/use-auth";
+import { useEffect, useMemo } from "react";
 import { DialogFooter } from "@/components/ui/dialog";
 
 interface AssetFormProps {
@@ -16,14 +18,59 @@ interface AssetFormProps {
 }
 
 export function AssetForm({ defaultValues, onSubmit, isLoading, onCancel }: AssetFormProps) {
+  const { user: currentUser } = useAuthStore();
+  const { data: users = [] } = useUsers();
+
   const form = useForm<InsertAsset>({
     resolver: zodResolver(insertAssetSchema),
     defaultValues: {
       status: "Active",
-      branchUser: "Current User", // Default stub
+      branchUser: currentUser?.username || "System",
+      branchName: currentUser?.role === "Branch User" ? (currentUser.username === "Admin ID" ? "Head Office" : currentUser.username) : "",
+      branchCode: currentUser?.role === "Branch User" ? String(currentUser.branchCode) : "",
       ...defaultValues,
     } as InsertAsset,
   });
+
+  // Re-sync if defaultValues change
+  useEffect(() => {
+    if (defaultValues) {
+      form.reset({
+        status: "Active",
+        branchUser: currentUser?.username || "System",
+        ...defaultValues
+      } as InsertAsset);
+    }
+  }, [defaultValues, form.reset]);
+
+  const availableBranches = useMemo(() => {
+    if (!currentUser) return [];
+
+    if (currentUser.role === "Admin") {
+      // Admins see all distinct branch codes/names from users list
+      const branches = users
+        .filter(u => u.role === "Branch User")
+        .map(u => ({ name: u.username, code: String(u.branchCode) }));
+      // Add HO as a choice
+      branches.unshift({ name: "Head Office", code: "HO" });
+      return branches;
+    }
+
+    if (currentUser.role?.includes("Manager")) {
+      // Managers see branches reporting to them
+      const branches = users
+        .filter(u => String(u.ReportingTo) === String(currentUser.branchCode))
+        .map(u => ({ name: u.username, code: String(u.branchCode) }));
+
+      // Also add manager's own branch
+      branches.unshift({ name: currentUser.username, code: String(currentUser.branchCode) });
+      return branches;
+    }
+
+    return [];
+  }, [currentUser, users]);
+
+  const isBranchUser = currentUser?.role === "Branch User";
 
   return (
     <Form {...form}>
@@ -145,9 +192,32 @@ export function AssetForm({ defaultValues, onSubmit, isLoading, onCancel }: Asse
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Branch Name</FormLabel>
-                <FormControl>
-                  <Input placeholder="Main Branch" {...field} />
-                </FormControl>
+                {isBranchUser ? (
+                  <FormControl>
+                    <Input {...field} readOnly className="bg-secondary/50" />
+                  </FormControl>
+                ) : (
+                  <Select
+                    onValueChange={(val) => {
+                      field.onChange(val);
+                      // Auto-select corresponding code
+                      const branch = availableBranches.find(b => b.name === val);
+                      if (branch) form.setValue("branchCode", branch.code);
+                    }}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select branch" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {availableBranches.map((b) => (
+                        <SelectItem key={b.name} value={b.name}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -159,9 +229,32 @@ export function AssetForm({ defaultValues, onSubmit, isLoading, onCancel }: Asse
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Branch Code</FormLabel>
-                <FormControl>
-                  <Input placeholder="BR-001" {...field} />
-                </FormControl>
+                {isBranchUser ? (
+                  <FormControl>
+                    <Input {...field} readOnly className="bg-secondary/50" />
+                  </FormControl>
+                ) : (
+                  <Select
+                    onValueChange={(val) => {
+                      field.onChange(val);
+                      // Auto-select corresponding name
+                      const branch = availableBranches.find(b => b.code === val);
+                      if (branch) form.setValue("branchName", branch.name);
+                    }}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select code" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {availableBranches.map((b) => (
+                        <SelectItem key={b.code} value={b.code}>{b.code}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -169,16 +262,16 @@ export function AssetForm({ defaultValues, onSubmit, isLoading, onCancel }: Asse
         </div>
 
         <FormField
-            control={form.control}
-            name="branchUser"
-            render={({ field }) => (
-              <FormItem className="hidden">
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-              </FormItem>
-            )}
-          />
+          control={form.control}
+          name="branchUser"
+          render={({ field }) => (
+            <FormItem className="hidden">
+              <FormControl>
+                <Input {...field} />
+              </FormControl>
+            </FormItem>
+          )}
+        />
 
         <DialogFooter className="pt-4">
           <Button variant="outline" type="button" onClick={onCancel}>

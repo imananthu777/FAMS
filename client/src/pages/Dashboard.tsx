@@ -1,30 +1,95 @@
-import { useDashboardStats, useAuditLogs } from "@/hooks/use-dashboard";
+import { useDashboardStats, useExpiringAssets } from "@/hooks/use-dashboard";
 import { useAuthStore } from "@/hooks/use-auth";
+import { useNotifications } from "@/hooks/use-notifications";
 import { Layout } from "@/components/Layout";
 import { StatCard } from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, Clock, Trash2, Box, TrendingUp, History } from "lucide-react";
+import { AlertCircle, Clock, Trash2, Box, Bell, ArrowRightLeft } from "lucide-react";
 import { format } from "date-fns";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { useState } from "react";
+import type { Asset } from "@shared/schema";
 
 export default function Dashboard() {
   const { user } = useAuthStore();
   const { data: stats, isLoading: isLoadingStats } = useDashboardStats(
-    user?.role === "Admin" ? undefined : user?.role,
+    user?.role || undefined,
     user?.branchCode || undefined
   );
-  const { data: logs, isLoading: isLoadingLogs } = useAuditLogs();
+  const { data: expiringAssets, refetch: fetchExpiringAssets, isLoading: isLoadingExpiring } = useExpiringAssets(
+    user?.role || undefined,
+    user?.branchCode || undefined
+  );
+  const { data: notifications, isLoading: isLoadingNotifications } = useNotifications(
+    user?.role || undefined,
+    user?.branchCode || undefined,
+    user?.username || undefined
+  );
+  const [transfersCount, setTransfersCount] = useState(0);
 
-  const chartData = [
-    { name: 'Jan', value: 40 },
-    { name: 'Feb', value: 30 },
-    { name: 'Mar', value: 20 },
-    { name: 'Apr', value: 27 },
-    { name: 'May', value: 18 },
-    { name: 'Jun', value: 23 },
-    { name: 'Jul', value: 34 },
-  ];
+  const [showExpiring, setShowExpiring] = useState(false);
+
+  // Fetch transfers count
+  useState(() => {
+    const fetchTransfers = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (user?.role) params.append('role', user.role);
+        if (user?.branchCode) params.append('branchCode', user.branchCode);
+        const res = await fetch(`/api/transfers/pending?${params.toString()}`);
+        const data = await res.json();
+        setTransfersCount(data.count || 0);
+      } catch (e) {
+        console.error('Failed to fetch transfers:', e);
+      }
+    };
+    fetchTransfers();
+  });
+
+  const handleExpiringClick = () => {
+    setShowExpiring(!showExpiring);
+    if (!showExpiring) {
+      fetchExpiringAssets();
+    }
+  };
+
+  const handleNotify = async (asset: Asset) => {
+    try {
+      await Promise.all([
+        // Notify Manager
+        fetch('/api/notifications', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'expiring_asset',
+            title: 'Asset Warranty/AMC Expiring',
+            message: `Asset "${asset.name}" (${asset.tagNumber}) warranty/AMC is expiring soon`,
+            assetId: String(asset.id),
+            createdBy: user?.username || 'System',
+            targetRole: 'Manager',
+            targetBranch: asset.branchCode,
+          })
+        }),
+        // Notify Admin
+        fetch('/api/notifications', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'expiring_asset',
+            title: 'Asset Warranty/AMC Expiring',
+            message: `Asset "${asset.name}" (${asset.tagNumber}) warranty/AMC is expiring soon`,
+            assetId: String(asset.id),
+            createdBy: user?.username || 'System',
+            targetRole: 'Admin',
+            targetBranch: 'HO',
+          })
+        })
+      ]);
+      alert(`Notifications sent to Manager and Admin for ${asset.name}!`);
+    } catch (e) {
+      alert('Failed to send notifications');
+    }
+  };
 
   return (
     <Layout title="Overview">
@@ -54,16 +119,19 @@ export default function Dashboard() {
                 icon={<Box className="w-5 h-5" />}
                 trend="+2.5% vs last month"
               />
+              <div onClick={handleExpiringClick} className="cursor-pointer">
+                <StatCard
+                  title="Expiring Soon (90 days)"
+                  value={stats?.expiringSoon || 0}
+                  icon={<AlertCircle className="w-5 h-5" />}
+                  className="border-yellow-200 bg-yellow-50 hover:shadow-md transition-shadow"
+                />
+              </div>
               <StatCard
-                title="Expiring Soon"
-                value={stats?.expiringSoon || 0}
-                icon={<AlertCircle className="w-5 h-5" />}
-                className="border-yellow-200 bg-yellow-50"
-              />
-              <StatCard
-                title="AMC Due"
-                value={stats?.amcDue || 0}
-                icon={<Clock className="w-5 h-5" />}
+                title="Transfers Actionable"
+                value={transfersCount}
+                icon={<ArrowRightLeft className="w-5 h-5" />}
+                className="border-blue-200 bg-blue-50"
               />
               <StatCard
                 title="Disposal Pending"
@@ -75,70 +143,97 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Analytics & Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Chart Section */}
-          <div className="lg:col-span-2 bg-card p-6 rounded-2xl shadow-sm border border-border/50">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-semibold text-lg flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-primary" />
-                Asset Value Trends
-              </h3>
-            </div>
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#888', fontSize: 12}} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#888', fontSize: 12}} />
-                  <Tooltip 
-                    cursor={{fill: 'rgba(0,0,0,0.05)'}}
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}} 
-                  />
-                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} barSize={32} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Recent Logs Section */}
-          <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50 overflow-hidden flex flex-col">
+        {/* Expiring Assets Section */}
+        {showExpiring && (
+          <div className="bg-card p-6 rounded-2xl shadow-sm border border-yellow-200 bg-yellow-50/30">
             <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-              <History className="w-5 h-5 text-primary" />
-              Recent Activity
+              <AlertCircle className="w-5 h-5 text-yellow-600" />
+              Assets Expiring Within 90 Days
             </h3>
-            
-            <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
-              {isLoadingLogs ? (
-                Array(3).fill(0).map((_, i) => (
-                  <div key={i} className="flex gap-3">
-                    <Skeleton className="w-10 h-10 rounded-full" />
-                    <div className="space-y-2 flex-1">
-                      <Skeleton className="h-4 w-3/4" />
-                      <Skeleton className="h-3 w-1/2" />
+
+            {isLoadingExpiring ? (
+              <div className="space-y-3">
+                {Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+              </div>
+            ) : expiringAssets && expiringAssets.length > 0 ? (
+              <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+                {expiringAssets.map((asset: Asset) => (
+                  <div key={asset.id} className="bg-white p-4 rounded-lg border border-yellow-200 flex items-center justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-foreground">{asset.name}</h4>
+                      <p className="text-sm text-muted-foreground">Tag: {asset.tagNumber} | Branch: {asset.branchName}</p>
+                      <div className="flex gap-4 mt-2 text-xs">
+                        {asset.warrantyEnd && (
+                          <span className="text-yellow-700">
+                            Warranty: {format(new Date(asset.warrantyEnd), "MMM dd, yyyy")}
+                          </span>
+                        )}
+                        {asset.amcEnd && (
+                          <span className="text-yellow-700">
+                            AMC: {format(new Date(asset.amcEnd), "MMM dd, yyyy")}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleNotify(asset)}
+                      className="ml-4"
+                    >
+                      <Bell className="w-4 h-4 mr-1" />
+                      Notify
+                    </Button>
                   </div>
-                ))
-              ) : (
-                logs?.slice(0, 5).map((log) => (
-                  <div key={log.id} className="flex gap-3 items-start p-3 hover:bg-secondary/50 rounded-xl transition-colors">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
-                      {log.user.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{log.action}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {log.assetId ? `Asset ID: ${log.assetId}` : log.remarks}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        {format(new Date(log.timestamp), "MMM d, h:mm a")}
-                      </p>
-                    </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-center py-8">No assets expiring in the next 90 days</p>
+            )}
+          </div>
+        )}
+
+        {/* Recent Notifications Section - Full Width */}
+        <div className="bg-card p-6 rounded-2xl shadow-sm border border-border/50 overflow-hidden flex flex-col">
+          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+            <Bell className="w-5 h-5 text-primary" />
+            Recent Notifications
+          </h3>
+
+          <div className="overflow-y-auto pr-2 space-y-4 custom-scrollbar max-h-96">
+            {isLoadingNotifications ? (
+              Array(3).fill(0).map((_, i) => (
+                <div key={i} className="flex gap-3">
+                  <Skeleton className="w-10 h-10 rounded-full" />
+                  <div className="space-y-2 flex-1">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
                   </div>
-                ))
-              )}
-            </div>
+                </div>
+              ))
+            ) : notifications && notifications.length > 0 ? (
+              notifications.slice(0, 10).map((notification: any) => (
+                <div key={notification.id} className={`flex gap-3 items-start p-3 rounded-xl transition-colors ${notification.isRead === 'true' ? 'bg-secondary/30' : 'bg-blue-50 hover:bg-blue-100'}`}>
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">{notification.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {notification.message}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {format(new Date(notification.createdAt), "MMM d, h:mm a")}
+                    </p>
+                  </div>
+                  {notification.isRead === 'false' && (
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-muted-foreground text-center py-8">No notifications</p>
+            )}
           </div>
         </div>
       </div>

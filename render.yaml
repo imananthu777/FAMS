@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: fams
+    runtime: node
+    region: singapore  # or choose: oregon, frankfurt, ohio
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+    healthCheckPath: /api/users
+    autoDeploy: true

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { type User } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@shared/routes";
@@ -20,6 +20,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "auth-storage",
+      storage: createJSONStorage(() => sessionStorage), // Use sessionStorage for session-only persistence
     }
   )
 );
@@ -35,18 +36,18 @@ export function useLogin() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username }),
       });
-      
+
       if (!res.ok) {
         throw new Error("Login failed");
       }
-      
+
       return api.auth.login.responses[200].parse(await res.json());
     },
-    onSuccess: (user) => {
+    onSuccess: (user: User) => {
       login(user);
       toast({ title: "Welcome back", description: `Logged in as ${user.username}` });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });

@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 
 export function useCreateGatePass() {
@@ -7,21 +6,30 @@ export function useCreateGatePass() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (data: { assetId: string; toBranch: string; generatedBy: string }) => {
-      const res = await fetch(api.gatepass.create.path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
+    mutationFn: async (data: any) => {
+      // Determine endpoint based on purpose
+      let endpoint = `/api/assets/${data.assetId}/gatepass`;
+      if (data.purpose === 'Transfer') {
+        endpoint = `/api/assets/${data.assetId}/transfer/initiate`;
+      }
 
-      if (!res.ok) throw new Error("Failed to generate gate pass");
-      return api.gatepass.create.responses[201].parse(await res.json());
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...data,
+          // ensure keys match what API expects
+          toLocation: data.toBranch || data.toLocation // Transfer uses toLocation/toBranch? API expects toLocation
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create gate pass / transfer");
+      return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.audit.list.path] });
-      toast({ title: "Success", description: "Gate Pass generated" });
+      queryClient.invalidateQueries({ queryKey: ['/api/assets'] });
+      toast({ title: "Success", description: "Request processed successfully" });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });

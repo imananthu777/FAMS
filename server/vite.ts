@@ -34,10 +34,14 @@ export async function setupVite(server: Server, app: Express) {
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
+    // Prevent index.html fallback for missing assets
+    if (url.startsWith("/assets/")) {
+      return res.status(404).json({ message: "Asset not found" });
+    }
+
     try {
       const clientTemplate = path.resolve(
-        import.meta.dirname,
-        "..",
+        process.cwd(),
         "client",
         "index.html",
       );

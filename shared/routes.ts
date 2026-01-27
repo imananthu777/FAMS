@@ -80,12 +80,12 @@ export const api = {
       },
     },
     search: {
-        method: 'GET' as const,
-        path: '/api/assets/search',
-        input: z.object({ q: z.string() }),
-        responses: {
-            200: z.array(z.custom<typeof assets.$inferSelect>()),
-        }
+      method: 'GET' as const,
+      path: '/api/assets/search',
+      input: z.object({ q: z.string() }),
+      responses: {
+        200: z.array(z.custom<typeof assets.$inferSelect>()),
+      }
     }
   },
   dashboard: {
@@ -97,13 +97,12 @@ export const api = {
         branchCode: z.string().optional(),
       }).optional(),
       responses: {
+        // Use passthrough to allow extra fields without crashing
         200: z.object({
-          totalAssets: z.number(),
-          expiringSoon: z.number(),
-          amcDue: z.number(),
-          disposalPending: z.number(),
-          newAssets: z.number(),
-        }),
+          totalAssets: z.number().nullish(),
+          expiringSoon: z.number().nullish(),
+          disposalPending: z.number().nullish(),
+        }).passthrough(),
       },
     },
   },
@@ -112,7 +111,8 @@ export const api = {
       method: 'GET' as const,
       path: '/api/audit-logs',
       responses: {
-        200: z.array(z.custom<typeof auditLogs.$inferSelect>()),
+        // Allow array of any object
+        200: z.array(z.record(z.unknown())),
       },
     },
   },
@@ -122,11 +122,12 @@ export const api = {
       path: '/api/gatepass',
       input: z.object({
         assetId: z.string(),
-        toBranch: z.string(),
+        toBranch: z.string().optional(),
+        toLocation: z.string().optional(),
         generatedBy: z.string(),
       }),
       responses: {
-        201: z.custom<typeof gatePasses.$inferSelect>(),
+        201: z.record(z.unknown()),
       },
     },
   },
