@@ -133,10 +133,10 @@ export function Layout({ children, title, action }: LayoutProps) {
       </aside>
 
       {/* Main Content Area - Flex grows to fill remaining space */}
-      <div className="flex-1 flex flex-col min-w-0 pb-24 md:pb-0">
+      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-0">
         {/* Header */}
-        <header className="sticky top-0 z-40 px-8 py-6 bg-background/50 backdrop-blur-3xl flex items-center justify-between border-b border-gray-100/50">
-          <div className="flex items-center gap-6">
+        <header className="sticky top-0 z-40 px-4 md:px-8 py-4 md:py-6 bg-background/50 backdrop-blur-3xl flex items-center justify-between border-b border-gray-100/50">
+          <div className="flex items-center gap-3 md:gap-6">
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="md:hidden">
@@ -150,10 +150,10 @@ export function Layout({ children, title, action }: LayoutProps) {
 
             {title && (
               <div className="flex flex-col">
-                <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight leading-tight">
+                <h2 className="text-xl md:text-3xl font-extrabold text-gray-900 tracking-tight leading-tight">
                   {title}
                 </h2>
-                <p className="text-xs font-medium text-gray-500 mt-1 uppercase tracking-widest">
+                <p className="hidden md:block text-xs font-medium text-gray-500 mt-1 uppercase tracking-widest">
                   System Interface / v2.6.0
                 </p>
               </div>
@@ -169,13 +169,13 @@ export function Layout({ children, title, action }: LayoutProps) {
         </header>
 
         {/* Main Content */}
-        <main className="relative z-10 p-8 pt-6 max-w-[1600px] w-full mx-auto overflow-hidden flex-1">
+        <main className="relative z-10 p-4 md:p-8 pt-4 md:pt-6 max-w-[1600px] w-full mx-auto overflow-hidden flex-1">
           {children}
         </main>
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-6 left-6 right-6 liquid-glass rounded-[2rem] p-2 z-50 border-white/40 shadow-2xl">
+      <nav className="md:hidden fixed bottom-4 left-4 right-4 liquid-glass rounded-[2rem] p-2 z-50 border-white/40 shadow-2xl">
         <div className="flex justify-around items-center h-14">
           {navItems.slice(0, 4).map((item: any) => {
             const isActive = location === item.path;
