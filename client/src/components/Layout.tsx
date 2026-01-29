@@ -121,53 +121,58 @@ export function Layout({ children, title, action }: LayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-background pb-24 md:pb-0 md:pl-80 transition-all duration-300">
+    <div className="min-h-screen bg-background flex">
       {/* Mesh Background */}
       <div className="fixed inset-0 pointer-events-none opacity-40 mesh-bg blur-3xl z-0" />
 
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex fixed left-4 top-4 bottom-4 w-64 liquid-glass rounded-[2.5rem] flex-col z-50 shadow-2xl overflow-hidden border-white/20">
-        <SidebarContent user={user} location={location} navItems={navItems} logout={logout} />
+      {/* Desktop Sidebar - Fixed width container */}
+      <aside className="hidden md:block w-72 flex-shrink-0 p-4 relative z-50">
+        <div className="sticky top-4 h-[calc(100vh-2rem)] liquid-glass rounded-[2.5rem] flex flex-col shadow-2xl overflow-hidden border-white/20">
+          <SidebarContent user={user} location={location} navItems={navItems} logout={logout} />
+        </div>
       </aside>
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 px-8 py-6 bg-background/50 backdrop-blur-3xl flex items-center justify-between border-b border-gray-100/50">
-        <div className="flex items-center gap-6">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden">
-                <Menu className="w-6 h-6" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-80 glass border-none">
-              <SidebarContent user={user} location={location} navItems={navItems} logout={logout} />
-            </SheetContent>
-          </Sheet>
+      {/* Main Content Area - Flex grows to fill remaining space */}
+      <div className="flex-1 flex flex-col min-w-0 pb-24 md:pb-0">
+        {/* Header */}
+        <header className="sticky top-0 z-40 px-8 py-6 bg-background/50 backdrop-blur-3xl flex items-center justify-between border-b border-gray-100/50">
+          <div className="flex items-center gap-6">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="md:hidden">
+                  <Menu className="w-6 h-6" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="p-0 w-80 glass border-none">
+                <SidebarContent user={user} location={location} navItems={navItems} logout={logout} />
+              </SheetContent>
+            </Sheet>
 
-          {title && (
-            <div className="flex flex-col">
-              <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight leading-tight">
-                {title}
-              </h2>
-              <p className="text-xs font-medium text-gray-500 mt-1 uppercase tracking-widest">
-                System Interface / v2.6.0
-              </p>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-2xl bg-white/50 border border-white/50 text-sm font-bold text-gray-900">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            Live System
+            {title && (
+              <div className="flex flex-col">
+                <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight leading-tight">
+                  {title}
+                </h2>
+                <p className="text-xs font-medium text-gray-500 mt-1 uppercase tracking-widest">
+                  System Interface / v2.6.0
+                </p>
+              </div>
+            )}
           </div>
-          {action}
-        </div>
-      </header>
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-2xl bg-white/50 border border-white/50 text-sm font-bold text-gray-900">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              Live System
+            </div>
+            {action}
+          </div>
+        </header>
 
-      {/* Main Content */}
-      <main className="relative z-10 p-8 pt-6 max-w-[1600px] mx-auto overflow-hidden">
-        {children}
-      </main>
+        {/* Main Content */}
+        <main className="relative z-10 p-8 pt-6 max-w-[1600px] w-full mx-auto overflow-hidden flex-1">
+          {children}
+        </main>
+      </div>
 
       {/* Mobile Bottom Navigation */}
       <nav className="md:hidden fixed bottom-6 left-6 right-6 liquid-glass rounded-[2rem] p-2 z-50 border-white/40 shadow-2xl">
