@@ -1,8 +1,8 @@
 import {
-  User, Asset, InsertUser, InsertAsset,
-  Agreement, InsertAgreement, Bill, InsertBill,
-  Notification, InsertNotification, AuditLog,
-  Role, InsertRole
+  User, InsertUser, AuditLog, InsertAuditLog,
+  Notification, InsertNotification,
+  Role, InsertRole, InsertAsset, Asset,
+  Agreement, InsertAgreement, Bill, InsertBill
 } from "@shared/schema";
 import fs from 'fs';
 import path from 'path';
@@ -31,13 +31,16 @@ export interface IStorage {
   searchAssets(query: string): Promise<Asset[]>;
 
   // Asset Support (Transfer outcome)
-  duplicateAssetForTransfer(originalAsset: Asset, newBranchCode: string): Promise<Asset>;
+  approveAssetTransfer(id: number, approvedBy: string): Promise<Asset>;
 
   // Payables
   getAgreements(filter?: { branchCode?: string }): Promise<Agreement[]>;
   createAgreement(agreement: InsertAgreement): Promise<Agreement>;
   getBills(filter?: { branchCode?: string }): Promise<Bill[]>;
-  createBill(bill: InsertBill): Promise<Bill>; // Must validate contract_id
+  getBills(filter?: { branchCode?: string }): Promise<Bill[]>;
+  createBill(bill: InsertBill): Promise<Bill>;
+  updateBillStatus(id: number, status: string, remarks?: string, updatedBy?: string): Promise<Bill>;
+  payBill(id: number, paidBy: string, modeOfPayment: string, utrNumber: string, paymentDate?: string): Promise<Bill>;
 
   // Roles
   getRoles(): Promise<Role[]>;
@@ -53,17 +56,7 @@ export interface IStorage {
 }
 
 class ExcelStorage implements IStorage {
-  private cache: Map<string, {
-    mtime: number;
-    data: any[];
-    cachedAt: number;
-  }> = new Map();
 
-  private getCacheTTL(filename: string): number {
-    // Assets change frequently, shorter TTL
-    if (filename === 'assets.xlsx') return 30000; // 30 seconds
-    return 300000; // 5 minutes
-  }
 
   constructor() {
     this.seedRoles();
@@ -162,22 +155,7 @@ class ExcelStorage implements IStorage {
   // Generic Get Data
   private async getSheetData<T>(filename: string, sheetName: string): Promise<T[]> {
     const filePath = path.join(DATA_DIR, filename);
-    const cacheKey = `${filename}:${sheetName}`;
-
     try {
-      if (!fs.existsSync(filePath)) return [];
-
-      const stats = await fs.promises.stat(filePath);
-      const mtime = stats.mtimeMs;
-      const now = Date.now();
-      const ttl = this.getCacheTTL(filename);
-
-      const cached = this.cache.get(cacheKey);
-      // Check both mtime and TTL
-      if (cached && cached.mtime === mtime && (now - cached.cachedAt < ttl)) {
-        return cached.data as T[];
-      }
-
       const workbook = await this.getWorkbook(filename);
       const sheet = workbook.getWorksheet(sheetName);
       if (!sheet || sheet.rowCount <= 1) {
@@ -213,7 +191,6 @@ class ExcelStorage implements IStorage {
         data.push(item as T);
       });
 
-      this.cache.set(cacheKey, { mtime, data, cachedAt: Date.now() });
       return data;
     } catch (e) {
       console.error(`Error reading ${filename}/${sheetName}:`, e);
@@ -262,29 +239,30 @@ class ExcelStorage implements IStorage {
     });
 
     // Check if new fields exist in headers, if not add them
+    let headersChanged = false;
+    const toSnakeCase = (str: string) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+
     Object.keys(data).forEach(key => {
-      if (!headers.includes(key)) {
-        const nextCol = headers.length > 0 ? headers.length : 1;
-        // Note: Simple append might not work perfectly if row 1 is full, strictly we should find first empty col
-        // For now assuming we append or headers are pre-set. 
-        // In a real robust app, we'd update headers row.
+      const snakeKey = toSnakeCase(key);
+      if (!headers.includes(key) && !headers.includes(snakeKey)) {
+        // Add new header
+        const newColIdx = headers.length > 0 ? headers.length : 1;
+        sheet!.getRow(1).getCell(newColIdx).value = snakeKey;
+        headers[newColIdx] = snakeKey;
+        headersChanged = true;
       }
     });
 
-    // For simplicity, if headers don't strictly match, we might miss data. 
-    // Let's ensure headers exist -> Re-read headers or just append row with current headers mapping.
-    // If it's a new file, we wrote headers. If existing, we try to match.
-    // Dynamic header update is complex, assuming Excel file has correct headers or we initialized it.
-
-    // Helper function to convert camelCase to snake_case for Excel headers
-    const toSnakeCase = (str: string) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    if (headersChanged) {
+      // No need to save here, we'll save at the end of addRow
+    }
 
     const rowValues: any[] = [];
     headers.forEach((header, index) => {
-      if (index === 0) return;
+      if (!header) return;
       // Try exact match first, then try camelCase version of header
       const camelCaseKey = header.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-      const value = data[header] ?? data[camelCaseKey] ?? null;
+      const value = data[header] !== undefined ? data[header] : (data[camelCaseKey] !== undefined ? data[camelCaseKey] : null);
       rowValues[index - 1] = value;
     });
 
@@ -440,14 +418,9 @@ class ExcelStorage implements IStorage {
         // Usually Approver needs to see it. 
 
         const inManagedBranch = managedBranches.has(String(a.branchCode));
+        const fromManagedBranch = (a as any).fromBranchCode && managedBranches.has(String((a as any).fromBranchCode));
 
-        if (inManagedBranch) {
-          // If status is Transferred, it's effectively gone from here, but kept for record.
-          // User wants: "if TransferApprovalPending, it shouldnot reflect in new branch." -> implied it reflects in old branch.
-          // "If an asset is TransferApproved ... reflect in Transferred in Branch A and Active Asset in Branch B."
-          return true;
-        }
-        return false;
+        return inManagedBranch || fromManagedBranch;
       });
     }
 
@@ -455,14 +428,9 @@ class ExcelStorage implements IStorage {
     if (filter.branchCode) {
       return assets.filter(a => {
         const inBranch = String(a.branchCode) === String(filter.branchCode);
-        // If TransferApprovalPending, it should reflect in current (old) branch.
-        // If Transferred, it reflects as "Transferred" (History).
-        // If Active, reflects as Active.
+        const transferredFromBranch = String((a as any).fromBranchCode) === String(filter.branchCode);
 
-        // Special case: If status is 'TransferApprovalPending' and 'toBranch' is THIS branch? 
-        // "if TransferApprovalPending, it shouldnot reflect in new branch." -> So NO.
-
-        return inBranch;
+        return inBranch || transferredFromBranch;
       });
     }
 
@@ -484,8 +452,24 @@ class ExcelStorage implements IStorage {
       else asset.amcWarranty = 'Warranty';
     }
 
+    // Auto-populate Link to Region (ManagerID) based on Branch
+    let managerId = (asset as any).ManagerID;
+    if (!managerId && asset.branchCode) {
+      const users = await this.getUsers();
+      // Find the branch user for this code (ignoring Managers/Admins to be safe, though branchCode should be unique)
+      const branchUser = users.find(u =>
+        String(u.branchCode) === String(asset.branchCode) &&
+        !u.role.toLowerCase().includes('manager') &&
+        u.role !== 'Admin' && u.role !== 'HO'
+      );
+
+      if (branchUser) {
+        managerId = (branchUser as any).ManagerID;
+      }
+    }
+
     // Ensure status is tracked
-    const newAsset = { ...asset, id: newId, status: asset.status || 'Active' };
+    const newAsset = { ...asset, id: newId, ManagerID: managerId, status: asset.status || 'Active' };
     await this.addRow('assets.xlsx', 'Assets', newAsset);
     return newAsset as Asset;
   }
@@ -511,14 +495,26 @@ class ExcelStorage implements IStorage {
     if (!targetRow) throw new Error(`Asset ${id} not found`);
 
     // Update cells
+    let headersUpdated = false;
+    const toSnakeCase = (str: string) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+
     Object.entries(updates).forEach(([key, value]) => {
-      const colIdx = headers.indexOf(key);
+      let colIdx = headers.indexOf(key);
+      if (colIdx === -1) {
+        const snakeKey = toSnakeCase(key);
+        colIdx = headers.indexOf(snakeKey);
+      }
+
       if (colIdx > -1) {
         targetRow!.getCell(colIdx).value = value as any;
       } else {
-        // Validation: Header doesn't exist. In strict mode check, or ignore.
-        // If critical field, we might need to add column. For now ignore or log.
-        console.warn(`Field ${key} not found in Assets headers`);
+        // Automatically add missing column
+        const newColIdx = headers.length;
+        const snakeKey = toSnakeCase(key);
+        sheet.getRow(1).getCell(newColIdx).value = snakeKey;
+        headers[newColIdx] = snakeKey;
+        targetRow!.getCell(newColIdx).value = value as any;
+        headersUpdated = true;
       }
     });
 
@@ -530,15 +526,27 @@ class ExcelStorage implements IStorage {
   }
 
   async deleteAsset(id: number): Promise<void> {
-    // Implementation similar to update but splice or mark deleted
-    // For this requirement, usually we just Status='Disposed'.
-    // But if hard delete requested:
     const workbook = await this.getWorkbook('assets.xlsx');
     const sheet = workbook.getWorksheet('Assets');
     if (!sheet) return;
 
-    // Find and delete row code... used existing pattern
-    // For brevity, assuming user uses "Disposal" flow mostly.
+    const headers: string[] = [];
+    sheet.getRow(1).eachCell((cell, col) => headers[col] = String(cell.value));
+    const idIdx = headers.indexOf('id') > -1 ? headers.indexOf('id') : 1;
+
+    let rowIndexToDelete = -1;
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const cellId = row.getCell(idIdx).value;
+      if (Number(cellId) === Number(id)) {
+        rowIndexToDelete = rowNumber;
+      }
+    });
+
+    if (rowIndexToDelete !== -1) {
+      sheet.spliceRows(rowIndexToDelete, 1);
+      await this.saveWorkbook(workbook, 'assets.xlsx');
+    }
   }
 
   async searchAssets(query: string): Promise<Asset[]> {
@@ -550,41 +558,32 @@ class ExcelStorage implements IStorage {
     );
   }
 
-  async duplicateAssetForTransfer(originalAsset: Asset, newBranchCode: string): Promise<Asset> {
-    // 1. Create copy
-    // 2. Clear transfer-specific history for the new copy? Or keep it?
-    // Usually new asset starts fresh or carries history? 
-    // "Active Asset in Branch B" -> implies clean state or continued life.
+  async approveAssetTransfer(id: number, approvedBy: string): Promise<Asset> {
+    const originalAsset = await this.getAsset(id);
+    if (!originalAsset) throw new Error("Asset not found");
+    if (!originalAsset.toLocation) throw new Error("Target location missing");
 
-    // Reset fields for the new asset
-    const { id, ...rest } = originalAsset;
-    const newAssetData: InsertAsset = {
-      ...rest,
-      branchCode: newBranchCode,
-      branchName: newBranchCode, // Assuming Name=Code or fetch One,
+    const newBranchCode = originalAsset.toLocation;
+    const users = await this.getUsers();
+    const branchUser = users.find(u =>
+      String(u.branchCode) === String(newBranchCode) &&
+      !u.role.toLowerCase().includes('manager') &&
+      u.role !== 'Admin' && u.role !== 'HO'
+    );
+
+    const targetBranchName = branchUser ? branchUser.username : (newBranchCode === 'HO' ? 'Head Office' : newBranchCode);
+
+    return await this.updateAsset(id, {
       status: 'Active',
-      // Clear transfer markers
-      transferStatus: null,
-      gatePassType: null,
-      initiatedBy: null,
-      // Retain device info (tag, serial, etc). 
-      // Note: Tag Number might need to be unique? If so, this is a distinct asset physically? 
-      // Usually same Tag Number but different location. 
-      // Shared schema says tagNumber is unique. 
-      // If we move it, we might need to modify the old asset's tag number to release it? 
-      // Or schema unique constraint might be problem. 
-      // "If an asset is TransferApproved ... reflect in Transferred in Branch A and Active Asset in Branch B"
-      // This implies 2 rows. If tagNumber unique, one must change.
-      // I will suffix the OLD one: "TAG-TRANSFERRED" or similar.
-    };
-
-    // Update OLD asset tag to avoid collision? 
-    await this.updateAsset(originalAsset.id, {
-      tagNumber: `${originalAsset.tagNumber}_TR_${Date.now()}`,
-      status: 'Transferred'
+      branchCode: newBranchCode,
+      branchName: targetBranchName,
+      fromBranch: originalAsset.branchName,
+      fromBranchCode: originalAsset.branchCode,
+      approvedBy,
+      approvedAt: new Date().toISOString(),
+      transferStatus: 'Transferred'
+      // We keep initiatedAt, initiatedBy, etc. for history display
     });
-
-    return this.createAsset(newAssetData);
   }
 
   // --- PAYABLES ---
@@ -607,7 +606,16 @@ class ExcelStorage implements IStorage {
   }
 
   async getBills(filter?: { branchCode?: string }): Promise<Bill[]> {
-    const bills = await this.getSheetData<Bill>('payables.xlsx', 'Bills');
+    const rawBills = await this.getSheetData<Bill>('payables.xlsx', 'Bills');
+
+    // Data Consistency Fix: If Paid, ensure it's considered Approved (unless Rejected explicitly)
+    const bills = rawBills.map(b => {
+      if (b.paymentStatus === 'Paid' && b.approvalStatus === 'Pending') {
+        return { ...b, approvalStatus: 'Approved' };
+      }
+      return b;
+    });
+
     if (!filter?.branchCode) return bills;
     return bills.filter(b => b.branchCode === filter.branchCode);
   }
@@ -651,7 +659,15 @@ class ExcelStorage implements IStorage {
 
   // Role-based filtering for bills (hierarchy support)
   async getBillsForRole(filter?: { role?: string; branchCode?: string }): Promise<Bill[]> {
-    let bills = await this.getSheetData<Bill>('payables.xlsx', 'Bills');
+    const rawBills = await this.getSheetData<Bill>('payables.xlsx', 'Bills');
+
+    // Data Consistency Fix: If Paid, ensure it's considered Approved
+    let bills = rawBills.map(b => {
+      if (b.paymentStatus === 'Paid' && b.approvalStatus === 'Pending') {
+        return { ...b, approvalStatus: 'Approved' };
+      }
+      return b;
+    });
 
     if (!filter) return bills;
 
@@ -738,7 +754,7 @@ class ExcelStorage implements IStorage {
 
     await this.saveWorkbook(workbook, 'payables.xlsx');
     // Clear cache
-    this.cache.delete('payables.xlsx:Bills');
+
 
     const all = await this.getBills();
     return all.find(b => Number(b.id) === Number(billId))!;
@@ -784,10 +800,145 @@ class ExcelStorage implements IStorage {
     });
 
     await this.saveWorkbook(workbook, 'payables.xlsx');
-    this.cache.delete('payables.xlsx:Bills');
+
 
     const all = await this.getBills();
     return all.find(b => Number(b.id) === Number(billId))!;
+  }
+
+  // Pay a bill
+  async payBill(id: number, paidBy: string, modeOfPayment: string, utrNumber: string, paymentDate?: string): Promise<Bill> {
+    const workbook = await this.getWorkbook('payables.xlsx');
+    const sheet = workbook.getWorksheet('Bills');
+    if (!sheet) throw new Error("Bills sheet not found");
+
+    const headers: string[] = [];
+    sheet.getRow(1).eachCell((cell, col) => headers[col] = String(cell.value));
+
+    let targetRow: ExcelJS.Row | undefined;
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const idIdx = headers.indexOf('id');
+      const cellId = idIdx > -1 ? row.getCell(idIdx).value : row.getCell(1).value;
+      if (Number(cellId) === Number(id)) targetRow = row;
+    });
+
+    if (!targetRow) throw new Error(`Bill ${id} not found`);
+
+    const pDate = paymentDate || new Date().toISOString();
+
+    const updates: Record<string, any> = {
+      paymentStatus: 'Paid',
+      approvalStatus: 'Approved',
+      paidBy: paidBy,
+      paymentDate: pDate,
+      modeOfPayment: modeOfPayment,
+      utrNumber: utrNumber
+    };
+
+    Object.entries(updates).forEach(([key, value]) => {
+      let colIdx = headers.indexOf(key);
+      if (colIdx === -1) {
+        // PascalCase
+        const pascalKey = key.charAt(0).toUpperCase() + key.slice(1);
+        colIdx = headers.indexOf(pascalKey);
+      }
+      if (colIdx === -1) {
+        // snake_case
+        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        colIdx = headers.indexOf(snakeKey);
+      }
+      if (colIdx === -1) {
+        // Case-insensitive & Space tolerant (e.g. "Payment Date")
+        const lowerKey = key.toLowerCase();
+        colIdx = headers.findIndex(h => h && (h.toLowerCase().replace(/ /g, '') === lowerKey || h.toLowerCase().replace(/_/g, '') === lowerKey));
+      }
+
+      if (colIdx > -1) {
+        targetRow!.getCell(colIdx).value = value;
+      }
+    });
+
+    await this.saveWorkbook(workbook, 'payables.xlsx');
+
+
+    // Notify
+    const bill = (await this.getBills()).find(b => Number(b.id) === Number(id))!;
+    await this.createNotification({
+      title: "Bill Paid",
+      message: `Bill #${bill.billNo} has been paid by ${paidBy}.`,
+      type: "success",
+      role: "Admin", // Notify Admin/HO
+      branchCode: bill.branchCode, // And the branch
+      isRead: "false",
+      createdAt: new Date().toISOString()
+    });
+
+    return bill;
+  }
+
+  // Update Bill Status (Generic)
+  async updateBillStatus(id: number, status: string, remarks?: string, updatedBy?: string, extras?: any): Promise<Bill> {
+    const workbook = await this.getWorkbook('payables.xlsx');
+    const sheet = workbook.getWorksheet('Bills');
+    if (!sheet) throw new Error("Bills sheet not found");
+
+    const headers: string[] = [];
+    sheet.getRow(1).eachCell((cell, col) => headers[col] = String(cell.value));
+
+    let targetRow: ExcelJS.Row | undefined;
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const idIdx = headers.indexOf('id');
+      const cellId = idIdx > -1 ? row.getCell(idIdx).value : row.getCell(1).value;
+      if (Number(cellId) === Number(id)) targetRow = row;
+    });
+
+    if (!targetRow) throw new Error(`Bill ${id} not found`);
+
+    const updates: Record<string, any> = {
+      approvalStatus: status,
+    };
+    if (remarks) updates.remarks = remarks; // Assuming remarks column exists or will be ignored
+    // If status is Rejected, we usually set rejectionReason, but here we use generic remarks if needed
+
+    Object.entries(updates).forEach(([key, value]) => {
+      let colIdx = headers.indexOf(key);
+      if (colIdx === -1) {
+        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        colIdx = headers.indexOf(snakeKey);
+      }
+      if (colIdx > -1) {
+        targetRow!.getCell(colIdx).value = value;
+      }
+    });
+
+    // Handle "Hold" / Postpone specifics
+    if (status === 'Hold' && extras?.paymentScheduledDate) {
+      let col = headers.indexOf('paymentScheduledDate');
+      if (col === -1) col = headers.indexOf('PaymentScheduledDate');
+      if (col > -1) {
+        targetRow!.getCell(col).value = extras.paymentScheduledDate;
+      }
+    }
+
+    await this.saveWorkbook(workbook, 'payables.xlsx');
+
+
+    const bill = (await this.getBills()).find(b => Number(b.id) === Number(id))!;
+
+    // Notify
+    await this.createNotification({
+      title: `Bill ${status}`,
+      message: `Bill #${bill.billNo} status updated to ${status} by ${updatedBy || 'System'}.`,
+      type: status === 'Rejected' ? "error" : "info",
+      role: "BranchUser", // Notify branch
+      branchCode: bill.branchCode,
+      isRead: "false",
+      createdAt: new Date().toISOString()
+    });
+
+    return bill;
   }
 
   // Get count of pending actions for user
@@ -825,76 +976,58 @@ class ExcelStorage implements IStorage {
 
     const bills = await this.getBills();
     const newId = bills.length + 1;
-    const newBill = { ...bill, id: newId };
+
+    // Enrich Bill Data
+    let vendorName = bill.vendorName;
+    let billType = bill.billType;
+    let branchCode = bill.branchCode;
+    let dueDate = bill.dueDate;
+
+    if (!vendorName && ag.vendorName) vendorName = ag.vendorName;
+    if (!branchCode && ag.branchCode) branchCode = ag.branchCode;
+
+    // Derive Bill Type
+    if (!billType || billType === 'Other') {
+      // Import map if possible, or duplicate logic for robustness (avoiding circular dependency if utils not imported)
+      // Check local implementation or Agreement type
+      const mapping: Record<string, string> = {
+        "Rent Agreement": "Rent Invoice",
+        "KSEB Agreement": "Electricity Bill",
+        "Water Bill Agreement": "Water Bill",
+        "Maintenance Agreement": "Maintenance Bill",
+        "Internet Agreement": "Internet Bill",
+        "Security Agreement": "Security Bill"
+      };
+      if (ag.type && mapping[ag.type]) {
+        billType = mapping[ag.type];
+      } else {
+        billType = ag.type || 'Generic Bill';
+      }
+    }
+
+    // Calculate Due Date if missing (Default +30 days)
+    if (!dueDate) {
+      const bDate = new Date(bill.billDate);
+      const dDate = new Date(bDate);
+      dDate.setDate(dDate.getDate() + 30);
+      dueDate = dDate.toISOString().split('T')[0];
+    }
+
+    const newBill = {
+      ...bill,
+      id: newId,
+      vendorName,
+      billType,
+      branchCode,
+      dueDate,
+      paymentStatus: 'Unpaid',
+      approvalStatus: 'Pending',
+      createdBy: (bill as any).createdBy
+    };
     await this.addRow('payables.xlsx', 'Bills', newBill);
     return newBill as Bill;
   }
 
-  // Mark a bill as paid
-  async payBill(billId: number, paidBy: string, modeOfPayment: string): Promise<Bill> {
-    const workbook = await this.getWorkbook('payables.xlsx');
-    const sheet = workbook.getWorksheet('Bills');
-    if (!sheet) throw new Error("Bills sheet not found");
-
-    // Build header map with 1-based column indices (ExcelJS uses 1-based indexing)
-    const headerMap: Record<string, number> = {};
-    sheet.getRow(1).eachCell((cell, col) => {
-      headerMap[String(cell.value)] = col;
-    });
-
-    let targetRow: ExcelJS.Row | undefined;
-    const idCol = headerMap['id'] || 1;
-
-    sheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return;
-      const cellId = row.getCell(idCol).value;
-      if (Number(cellId) === Number(billId)) targetRow = row;
-    });
-
-    if (!targetRow) throw new Error(`Bill ${billId} not found`);
-
-    // Update payment fields
-    const updates: Record<string, any> = {
-      paymentStatus: 'Paid',
-      modeOfPayment: modeOfPayment,
-      paidBy: paidBy,
-      paidAt: new Date().toISOString()
-    };
-
-    Object.entries(updates).forEach(([key, value]) => {
-      // Find column - try multiple case variations
-      let colIdx = headerMap[key];
-      if (!colIdx) {
-        // Try PascalCase (first letter uppercase)
-        const pascalKey = key.charAt(0).toUpperCase() + key.slice(1);
-        colIdx = headerMap[pascalKey];
-      }
-      if (!colIdx) {
-        // Try snake_case
-        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-        colIdx = headerMap[snakeKey];
-      }
-      if (!colIdx) {
-        // Try case-insensitive search
-        const lowerKey = key.toLowerCase();
-        for (const [header, col] of Object.entries(headerMap)) {
-          if (header.toLowerCase() === lowerKey) {
-            colIdx = col;
-            break;
-          }
-        }
-      }
-      if (colIdx) {
-        targetRow!.getCell(colIdx).value = value;
-      }
-    });
-
-    await this.saveWorkbook(workbook, 'payables.xlsx');
-    this.cache.delete('payables.xlsx:Bills');
-
-    const all = await this.getBills();
-    return all.find(b => Number(b.id) === Number(billId))!;
-  }
 
   // Get all unpaid bills for Admin/HO (for payment management)
   async getUnpaidBills(): Promise<Bill[]> {
@@ -905,7 +1038,12 @@ class ExcelStorage implements IStorage {
     return bills
       .filter(b => {
         // Check paymentStatus or PaymentStatus (Excel might have different case)
-        const status = (b as any).paymentStatus || (b as any).PaymentStatus;
+        const status = String((b as any).paymentStatus || (b as any).PaymentStatus || "");
+        const approval = String((b as any).approvalStatus || "");
+
+        // Exclude Rejected and Approved bills from Admin view (only show Pending)
+        if (approval === 'Rejected' || approval === 'Approved') return false;
+
         return status !== 'Paid';
       })
       .map(b => {
@@ -948,17 +1086,27 @@ class ExcelStorage implements IStorage {
     ).length;
 
     return {
-      totalAssets: assets.length,
+      totalAssets: assets.filter(a => {
+        const isCurrentlyInBranch = !filter?.branchCode || String(a.branchCode) === String(filter.branchCode);
+        return isCurrentlyInBranch && (a.status === 'Active' || a.status === 'Disposed');
+      }).length,
       expiringSoon: expiringSoon.length,
       disposalPending
     };
   }
 
   async getNotifications(filter: { role?: string; branchCode?: string; username?: string }): Promise<Notification[]> {
-    // Stored in Users.xlsx? Or Notifications.xlsx?
-    // Plan said users.xlsx -> Sheet 'Notifications' or similar?
-    // I shall use 'users.xlsx' sheet 'Notifications' to stick to 3 files.
-    return this.getSheetData<Notification>('users.xlsx', 'Notifications'); // Assuming sheet Notifications exists in users.xlsx
+    const all = await this.getSheetData<Notification>('users.xlsx', 'Notifications');
+    return all.filter(n => {
+      // If specific user targetted
+      if ((n as any).targetUsername) {
+        return (n as any).targetUsername === filter.username;
+      }
+      // Otherwise fallback to role/branch broadcast
+      if (n.targetRole && n.targetRole !== filter.role) return false;
+      if (n.targetBranch && n.targetBranch !== filter.branchCode) return false;
+      return true;
+    });
   }
 
   async createNotification(notification: InsertNotification): Promise<Notification> {

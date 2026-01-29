@@ -10,6 +10,12 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // Disable caching for all API routes to ensure fresh data
+  app.use('/api', (req, res, next) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+  });
+
   // --- AUTH ---
   app.post(api.auth.login.path, async (req, res) => {
     const { username } = req.body;
@@ -28,8 +34,8 @@ export async function registerRoutes(
 
   // Get current user info - useful for role checks on frontend
   app.get('/api/user', async (req, res) => {
-    if (req.user) {
-      res.json(req.user);
+    if ((req as any).user) {
+      res.json((req as any).user);
     } else {
       res.status(401).json({ message: "Not authenticated" });
     }
@@ -86,7 +92,7 @@ export async function registerRoutes(
       } else {
         // Use role-based filtering
         const allBills = await storage.getBillsForRole({ role, branchCode });
-        const pendingBills = allBills.filter(b => b.approvalStatus === 'Pending');
+        const pendingBills = allBills.filter(b => b.approvalStatus === 'Pending' && b.paymentStatus !== 'Paid');
         res.json(pendingBills);
       }
     } catch (e: any) {
@@ -105,6 +111,19 @@ export async function registerRoutes(
 
       const billId = parseInt(req.params.id);
       const bill = await storage.approveBill(billId, username, parseInt(userId));
+
+      // Notify the creator
+      if (bill.createdBy) {
+        await storage.createNotification({
+          title: "Bill Approved",
+          message: `Your bill #${bill.billNo} has been approved by ${username}.`,
+          type: "success",
+          targetUsername: bill.createdBy,
+          isRead: "false",
+          createdAt: new Date().toISOString()
+        });
+      }
+
       res.json(bill);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to approve bill" });
@@ -126,6 +145,19 @@ export async function registerRoutes(
 
       const billId = parseInt(req.params.id);
       const bill = await storage.rejectBill(billId, username, reason, parseInt(userId));
+
+      // Notify the creator
+      if (bill.createdBy) {
+        await storage.createNotification({
+          title: "Bill Rejected",
+          message: `Your bill #${bill.billNo} has been rejected by ${username}. Reason: ${reason}`,
+          type: "error",
+          targetUsername: bill.createdBy,
+          isRead: "false",
+          createdAt: new Date().toISOString()
+        });
+      }
+
       res.json(bill);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to reject bill" });
@@ -146,7 +178,7 @@ export async function registerRoutes(
         res.json({ pendingBills: count });
       } else {
         const allBills = await storage.getBillsForRole({ role, branchCode });
-        const count = allBills.filter(b => b.approvalStatus === 'Pending').length;
+        const count = allBills.filter(b => b.approvalStatus === 'Pending' && b.paymentStatus !== 'Paid').length;
         res.json({ pendingBills: count });
       }
     } catch (e: any) {
@@ -221,6 +253,18 @@ export async function registerRoutes(
         gatePassType: 'Transfer',
         purpose: 'Transfer'
       });
+
+      // Notify Admin/HO and Target Branch about transfer
+      await storage.createNotification({
+        title: "Transfer Initiated",
+        message: `${asset.name} is being transferred from ${asset.branchCode} to ${toLocation}. Pending approval.`,
+        type: "info",
+        targetRole: "Admin",
+        targetBranch: toLocation,
+        isRead: "false",
+        createdAt: new Date().toISOString()
+      });
+
       res.json(asset);
     } catch (e) {
       res.status(500).json({ message: "Failed to initiate transfer" });
@@ -233,21 +277,21 @@ export async function registerRoutes(
     const { approvedBy } = req.body;
 
     try {
-      const originalAsset = await storage.getAsset(id);
-      if (!originalAsset) return res.status(404).json({ message: "Asset not found" });
-      if (!originalAsset.toLocation) return res.status(400).json({ message: "Target location missing" });
+      const asset = await storage.approveAssetTransfer(id, approvedBy);
 
-      // 1. Update original asset w/ approval info
-      await storage.updateAsset(id, {
-        approvedBy,
-        approvedAt: new Date().toISOString(),
-        transferStatus: 'Transferred' // storage.duplicateAssetForTransfer handles status update too, but consistent is good
-      });
+      // Notify the initiator
+      if (asset.initiatedBy) {
+        await storage.createNotification({
+          title: "Transfer Approved",
+          message: `The transfer for asset ${asset.name} has been approved.`,
+          type: "success",
+          targetUsername: asset.initiatedBy,
+          isRead: "false",
+          createdAt: new Date().toISOString()
+        });
+      }
 
-      // 2. Perform the split
-      const newAsset = await storage.duplicateAssetForTransfer(originalAsset, originalAsset.toLocation);
-
-      res.json({ original: originalAsset, new: newAsset });
+      res.json(asset);
     } catch (e) {
       console.error(e);
       res.status(500).json({ message: "Failed to approve transfer" });
@@ -268,6 +312,17 @@ export async function registerRoutes(
         generatedBy,
         generatedAt: new Date().toISOString()
       });
+
+      // Notify Admin/HO about gate pass
+      await storage.createNotification({
+        title: "Gate Pass Generated",
+        message: `A temporary gate pass for ${asset.name} has been generated by ${generatedBy || 'a user'}. Destination: ${toLocation}.`,
+        type: "info",
+        targetRole: "Admin",
+        isRead: "false",
+        createdAt: new Date().toISOString()
+      });
+
       res.json(asset);
     } catch (e) {
       res.status(500).json({ message: "Failed to create gate pass" });
@@ -322,6 +377,19 @@ export async function registerRoutes(
         approvedBy,
         approvedAt: new Date().toISOString()
       });
+
+      // Notify the initiator
+      if (asset.initiatedBy) {
+        await storage.createNotification({
+          title: "Disposal Approved",
+          message: `The disposal request for ${asset.name} has been approved.`,
+          type: "success",
+          targetUsername: asset.initiatedBy,
+          isRead: "false",
+          createdAt: new Date().toISOString()
+        });
+      }
+
       res.json(asset);
     } catch (e) {
       res.status(500).json({ message: "Failed to approve disposal" });
@@ -376,8 +444,23 @@ export async function registerRoutes(
 
   app.post('/api/payables/bills', async (req, res) => {
     try {
-      const data = insertBillSchema.parse(req.body);
-      const item = await storage.createBill(data);
+      // Pass createdBy explicitly if it's in the body but not in the standard schema validation
+      const data = {
+        ...insertBillSchema.parse(req.body),
+        createdBy: req.body.createdBy
+      };
+      const item = await storage.createBill(data as any);
+
+      // Notify Admin/HO about new bill
+      await storage.createNotification({
+        title: "New Bill Raised",
+        message: `A new bill #${item.billNo} for ₹${item.amount?.toLocaleString()} has been raised by ${item.createdBy || 'a user'}.`,
+        type: "info",
+        targetRole: "Admin",
+        isRead: "false",
+        createdAt: new Date().toISOString()
+      });
+
       res.status(201).json(item);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Invalid bill data" });
@@ -387,17 +470,44 @@ export async function registerRoutes(
   // Pay a bill (Admin/HO only)
   app.post('/api/payables/bills/:id/pay', async (req, res) => {
     try {
-      const { paidBy, modeOfPayment } = req.body;
+      const { paidBy, modeOfPayment, utrNumber, paymentDate } = req.body;
 
-      if (!paidBy || !modeOfPayment) {
-        return res.status(400).json({ message: "paidBy and modeOfPayment required" });
+      if (!paidBy || !modeOfPayment || !utrNumber) {
+        return res.status(400).json({ message: "paidBy, modeOfPayment, and utrNumber required" });
       }
 
       const billId = parseInt(req.params.id);
-      const bill = await storage.payBill(billId, paidBy, modeOfPayment);
+      const bill = await storage.payBill(billId, paidBy, modeOfPayment, utrNumber, paymentDate);
+
+      // Notify the creator
+      if (bill.createdBy) {
+        await storage.createNotification({
+          title: "Bill Paid",
+          message: `Your bill #${bill.billNo} has been paid via ${modeOfPayment}. UTR: ${utrNumber}`,
+          type: "success",
+          targetUsername: bill.createdBy,
+          isRead: "false",
+          createdAt: new Date().toISOString()
+        });
+      }
+
       res.json(bill);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Failed to pay bill" });
+    }
+  });
+
+  // Update Bill Status (Generic - for Finance, Postpone)
+  app.put('/api/payables/bills/:id/status', async (req, res) => {
+    try {
+      const { status, remarks, updatedBy, ...extras } = req.body;
+      if (!status) return res.status(400).json({ message: "Status required" });
+
+      const billId = parseInt(req.params.id);
+      const bill = await storage.updateBillStatus(billId, status, remarks, updatedBy, extras);
+      res.json(bill);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Failed to update bill status" });
     }
   });
 
@@ -526,17 +636,54 @@ export async function registerRoutes(
   app.put('/api/disposals/:id/submit', async (req, res) => {
     // Submit from Cart to Pending
     const asset = await storage.updateAsset(Number(req.params.id), { status: 'Pending' });
+
+    // Notify Admin/HO about new disposal pending
+    await storage.createNotification({
+      title: "Disposal Pending",
+      message: `A new disposal request for ${asset.name} has been submitted and is pending approval.`,
+      type: "info",
+      targetRole: "Admin",
+      isRead: "false",
+      createdAt: new Date().toISOString()
+    });
+
     res.json(asset);
   });
 
   app.put('/api/disposals/:id/recommend', async (req, res) => {
     const asset = await storage.updateAsset(Number(req.params.id), { status: 'Recommended' });
+
+    // Notify the initiator
+    if (asset.initiatedBy) {
+      await storage.createNotification({
+        title: "Disposal Recommended",
+        message: `Your disposal request for ${asset.name} has been recommended for final approval.`,
+        type: "success",
+        targetUsername: asset.initiatedBy,
+        isRead: "false",
+        createdAt: new Date().toISOString()
+      });
+    }
+
     res.json(asset);
   });
 
   app.put('/api/disposals/:id/reject', async (req, res) => {
     // Return to Cart
     const asset = await storage.updateAsset(Number(req.params.id), { status: 'In Cart' });
+
+    // Notify the initiator
+    if (asset.initiatedBy) {
+      await storage.createNotification({
+        title: "Disposal Rejected",
+        message: `Your disposal request for ${asset.name} has been sent back to cart for review.`,
+        type: "error",
+        targetUsername: asset.initiatedBy,
+        isRead: "false",
+        createdAt: new Date().toISOString()
+      });
+    }
+
     res.json(asset);
   });
 
@@ -567,10 +714,7 @@ export async function registerRoutes(
     const users = await storage.getUsers();
     if (users.length === 0) {
       await storage.createUser({
-        username: "admin", password: "123", role: "Admin", branchCode: "HO",
-        // Perms
-        createModifyAssets: "Yes",
-        approveAssetCreation: "Yes"
+        username: "admin", password: "123", role: "Admin", branchCode: "HO"
       });
       console.log("Seeded Admin user");
     }

@@ -1,95 +1,144 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* iOS-inspired Palette */
-  --background: 210 20% 98%;    /* #F2F2F7 - iOS Light Gray Background */
-  --foreground: 222 47% 11%;    /* Dark Text */
+  /* iOS 26 Liquid Glass Palette */
+  --background: 230 40% 98%;
+  --foreground: 230 40% 10%;
   
-  --card: 0 0% 100%;            /* Pure White Cards */
-  --card-foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 230 40% 10%;
   
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
+  --popover-foreground: 230 40% 10%;
   
-  --primary: 211 100% 50%;      /* #007AFF - iOS Blue */
-  --primary-foreground: 210 40% 98%;
+  --primary: 230 90% 60%;      /* Vibrant Indigo/Blue */
+  --primary-foreground: 0 0% 100%;
   
-  --secondary: 210 40% 96.1%;   /* Light Gray for secondary elements */
-  --secondary-foreground: 222 47% 11%;
+  --secondary: 230 20% 95%;
+  --secondary-foreground: 230 40% 15%;
   
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215 16% 47%;
+  --muted: 230 20% 95%;
+  --muted-foreground: 230 15% 45%;
   
-  --accent: 211 100% 50%;
-  --accent-foreground: 210 40% 98%;
+  --accent: 230 90% 60%;
+  --accent-foreground: 230 40% 98%;
   
-  --destructive: 0 84% 60%;     /* Red */
-  --destructive-foreground: 210 40% 98%;
+  --destructive: 0 85% 60%;
+  --destructive-foreground: 0 0% 100%;
 
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 211 100% 50%;
+  --border: 230 30% 90%;
+  --input: 230 30% 90%;
+  --ring: 230 90% 60%;
   
-  --radius: 1rem;               /* Rounded corners consistent with iOS */
+  --radius: 1.5rem;
 }
 
 .dark {
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
+  --background: 230 40% 5%;
+  --foreground: 230 20% 98%;
   
-  --card: 217 33% 17%;
-  --card-foreground: 210 40% 98%;
+  --card: 230 40% 8%;
+  --card-foreground: 230 20% 98%;
   
-  --popover: 217 33% 17%;
-  --popover-foreground: 210 40% 98%;
+  --popover: 230 40% 8%;
+  --popover-foreground: 230 20% 98%;
   
-  --primary: 211 100% 50%;
-  --primary-foreground: 222 47% 11%;
+  --primary: 230 100% 65%;
+  --primary-foreground: 230 40% 10%;
   
-  --secondary: 217 19% 27%;
-  --secondary-foreground: 210 40% 98%;
+  --secondary: 230 30% 15%;
+  --secondary-foreground: 230 20% 98%;
   
-  --muted: 217 19% 27%;
-  --muted-foreground: 215 20% 65%;
+  --muted: 230 30% 12%;
+  --muted-foreground: 230 15% 65%;
   
-  --accent: 217 19% 27%;
-  --accent-foreground: 210 40% 98%;
+  --accent: 230 100% 65%;
+  --accent-foreground: 230 40% 98%;
   
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive: 0 70% 50%;
+  --destructive-foreground: 230 20% 98%;
   
-  --border: 217 19% 27%;
-  --input: 217 19% 27%;
-  --ring: 212 96% 78%;
+  --border: 230 30% 20%;
+  --input: 230 30% 20%;
+  --ring: 230 100% 65%;
 }
 
 @layer base {
   body {
-    @apply bg-background text-foreground antialiased font-sans selection:bg-primary/20 selection:text-primary;
+    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
+    font-family: 'Outfit', sans-serif;
+    background-image: 
+      radial-gradient(at 0% 0%, hsla(230, 90%, 60%, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, hsla(280, 90%, 60%, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, hsla(200, 90%, 60%, 0.05) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, hsla(150, 90%, 60%, 0.05) 0px, transparent 50%);
+    background-attachment: fixed;
   }
 }
 
 @layer utilities {
-  .glass {
-    @apply bg-white/80 backdrop-blur-md border border-white/20;
+  .liquid-glass {
+    @apply backdrop-blur-2xl bg-white/40 border border-white/40 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)];
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.1) 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .liquid-glass::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.3) 0%, transparent 100%);
+    pointer-events: none;
+  }
+
+  .liquid-glass-dark {
+    @apply backdrop-blur-2xl bg-black/40 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)];
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
   }
   
-  .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
+  .glossy-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.3) 100%);
+    @apply backdrop-blur-xl border border-white/50 shadow-xl shadow-indigo-500/5;
+    transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
   }
 
-  .ios-shadow {
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  .glossy-card:hover {
+    @apply shadow-2xl shadow-primary/10 -translate-y-1;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.5) 100%);
+  }
+
+  .mesh-bg {
+    background-color: hsla(230,40%,98%,1);
+    background-image:
+      radial-gradient(at 40% 20%, hsla(230,100%,74%,1) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, hsla(189,100%,56%,1) 0px, transparent 50%),
+      radial-gradient(at 0% 50%, hsla(355,100%,93%,1) 0px, transparent 50%),
+      radial-gradient(at 80% 50%, hsla(340,100%,76%,1) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, hsla(22,100%,77%,1) 0px, transparent 50%),
+      radial-gradient(at 80% 100%, hsla(242,100%,70%,1) 0px, transparent 50%),
+      radial-gradient(at 0% 0%, hsla(343,100%,76%,1) 0px, transparent 50%);
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
   }
 }
 
-/* Smooth Transitions */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
 * {
-  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 150ms;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+

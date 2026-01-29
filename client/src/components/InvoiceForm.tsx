@@ -8,6 +8,7 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { format, subDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuthStore } from "@/hooks/use-auth";
 
 interface Agreement {
     id: number;
@@ -85,8 +86,11 @@ export function InvoiceForm({ agreement, onSuccess, onCancel }: InvoiceFormProps
                 title: "Invoice Created",
                 description: "Bill has been successfully created.",
             });
-            queryClient.invalidateQueries({ queryKey: ['bills'] });
-            queryClient.invalidateQueries({ queryKey: ['bills', agreement.contractId] });
+            queryClient.invalidateQueries({ queryKey: ['/api/payables/bills'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/payables/unpaid-bills'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/payables/pending-approvals'] });
+            queryClient.invalidateQueries({ queryKey: ['bills', agreement.contractId] }); // Keep this if used somewhere else, or update if incorrect. 
+            // Better to match the keys used in use-payables.ts
             onSuccess?.();
         },
         onError: (error: any) => {
@@ -123,6 +127,7 @@ export function InvoiceForm({ agreement, onSuccess, onCancel }: InvoiceFormProps
         }
 
         const monthYear = format(new Date(formData.billDate), 'yyyy-MM');
+        const { user } = useAuthStore.getState();
         const billData = {
             billNo: formData.billNo,
             contractId: agreement.contractId,
@@ -137,6 +142,7 @@ export function InvoiceForm({ agreement, onSuccess, onCancel }: InvoiceFormProps
             isException: validation.needsException ? 'Yes' : 'No',
             exceptionReason: formData.exceptionReason || null,
             paymentStatus: 'Unpaid',
+            createdBy: user?.username
         };
 
         createBillMutation.mutate(billData);
