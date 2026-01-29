@@ -121,7 +121,7 @@ export function Layout({ children, title, action }: LayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-background pb-24 md:pb-0 md:pl-72 transition-all duration-300">
+    <div className="min-h-screen bg-background pb-24 md:pb-0 md:pl-80 transition-all duration-300">
       {/* Mesh Background */}
       <div className="fixed inset-0 pointer-events-none opacity-40 mesh-bg blur-3xl z-0" />
 
