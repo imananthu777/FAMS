@@ -17,9 +17,9 @@ export function AssetCard({ asset, onClick }: AssetCardProps) {
   };
 
   return (
-    <div 
+    <div
       onClick={onClick}
-      className="bg-card rounded-2xl p-5 shadow-sm border border-border/50 hover:shadow-md hover:border-primary/20 transition-all duration-300 cursor-pointer group"
+      className="glossy-card rounded-3xl p-6 transition-all duration-500 cursor-pointer group active:scale-[0.98]"
     >
       <div className="flex justify-between items-start mb-3">
         <div className="flex-1">
@@ -31,14 +31,14 @@ export function AssetCard({ asset, onClick }: AssetCardProps) {
             {asset.tagNumber}
           </p>
         </div>
-        <Badge 
+        <Badge
           className={cn("ml-2 whitespace-nowrap", statusColors[asset.status as keyof typeof statusColors] || "bg-gray-100")}
           variant="secondary"
         >
           {asset.status}
         </Badge>
       </div>
-      
+
       <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground mt-4">
         <div className="flex items-center gap-2">
           <MapPin className="w-4 h-4 text-primary/60" />

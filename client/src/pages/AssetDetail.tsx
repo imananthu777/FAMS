@@ -1,4 +1,4 @@
-import { useAsset, useUpdateAsset, useDeleteAsset } from "@/hooks/use-assets";
+import { useAsset, useUpdateAsset, useDeleteAsset, useInitiateTransfer } from "@/hooks/use-assets";
 import { useCreateGatePass } from "@/hooks/use-gatepass";
 import { useCreateDisposal } from "@/hooks/use-disposals";
 import { useUsers } from "@/hooks/use-users";
@@ -29,15 +29,15 @@ export default function AssetDetail() {
   const { mutate: deleteAsset, isPending: isDeleting } = useDeleteAsset();
   const { mutate: createGatePass, isPending: isGeneratingPass } = useCreateGatePass();
   const { mutate: createDisposal, isPending: isAddingToDisposal } = useCreateDisposal();
+  const { mutate: initiateTransfer, isPending: isInitiatingTransfer } = useInitiateTransfer();
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [isPassOpen, setIsPassOpen] = useState(false);
   const [isDisposalOpen, setIsDisposalOpen] = useState(false);
 
-  // Transfer form state
-  const [selectedRegion, setSelectedRegion] = useState("");
   const [selectedBranch, setSelectedBranch] = useState("");
+  const [transferReason, setTransferReason] = useState("");
 
   // Gate Pass (Temporary) form state
   const [passLocation, setPassLocation] = useState("");
@@ -46,40 +46,31 @@ export default function AssetDetail() {
   // Disposal form state
   const [disposalReason, setDisposalReason] = useState("");
 
-  // Get managers (regions) 
-  const managers = useMemo(() => {
-    return users?.filter((u: any) => u.role?.includes('Manager')) || [];
+  const availableBranches = useMemo(() => {
+    if (!users) return [];
+    const branches = users
+      .filter(u => u.branchCode && u.branchCode !== "HO")
+      .filter(u => !u.role.toLowerCase().includes("manager"))
+      .map(u => ({ name: u.username, code: String(u.branchCode) }));
+
+    branches.unshift({ name: "Head Office", code: "HO" });
+    return Array.from(new Map(branches.map(item => [item.code, item])).values());
   }, [users]);
-
-  // Get branches for selected region
-  const branchesForRegion = useMemo(() => {
-    if (!selectedRegion) return [];
-    // Find the manager's branchCode and filter users reporting to them or with same branchCode
-    const manager = managers.find((m: any) => m.username === selectedRegion);
-    if (!manager) return [];
-
-    return users?.filter((u: any) =>
-      u.ReportingTo === manager.username ||
-      u.ReportingTo === manager.role ||
-      u.branchCode === manager.branchCode
-    ) || [];
-  }, [selectedRegion, managers, users]);
 
   if (isLoading) return <div className="p-8 text-center">Loading asset...</div>;
   if (!asset) return <div className="p-8 text-center">Asset not found</div>;
 
   const handleTransfer = () => {
-    createGatePass({
-      assetId: asset.id.toString(),
-      fromBranch: asset.branchCode,
-      toBranch: selectedBranch,
-      purpose: "Transfer",
-      generatedBy: user?.username || "System"
+    initiateTransfer({
+      id: asset.id,
+      toLocation: selectedBranch,
+      reason: transferReason,
+      initiatedBy: user?.username || "System"
     }, {
       onSuccess: () => {
         setIsTransferOpen(false);
-        setSelectedRegion("");
         setSelectedBranch("");
+        setTransferReason("");
       }
     });
   };
@@ -132,48 +123,52 @@ export default function AssetDetail() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="icon" className="rounded-full">
-                  <Edit className="w-4 h-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Edit Asset</DialogTitle>
-                </DialogHeader>
-                <AssetForm
-                  defaultValues={asset}
-                  onSubmit={(data) => {
-                    updateAsset({ id, ...data }, { onSuccess: () => setIsEditOpen(false) });
-                  }}
-                  isLoading={isUpdating}
-                  onCancel={() => setIsEditOpen(false)}
-                />
-              </DialogContent>
-            </Dialog>
+            {(user?.role === 'Admin' || user?.role === 'HO') && (
+              <>
+                <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="icon" className="rounded-full">
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>Edit Asset</DialogTitle>
+                    </DialogHeader>
+                    <AssetForm
+                      defaultValues={asset}
+                      onSubmit={(data) => {
+                        updateAsset({ id, ...data }, { onSuccess: () => setIsEditOpen(false) });
+                      }}
+                      isLoading={isUpdating}
+                      onCancel={() => setIsEditOpen(false)}
+                    />
+                  </DialogContent>
+                </Dialog>
 
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="icon" className="rounded-full">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete the asset.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => deleteAsset(id, { onSuccess: () => setLocation("/assets") })}>
-                    {isDeleting ? "Deleting..." : "Delete"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="icon" className="rounded-full">
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the asset.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => deleteAsset(id, { onSuccess: () => setLocation("/assets") })}>
+                        {isDeleting ? "Deleting..." : "Delete"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
           </div>
         </div>
 
@@ -186,77 +181,69 @@ export default function AssetDetail() {
 
         {/* Action Bar */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {/* Initiate Transfer */}
-          <Dialog open={isTransferOpen} onOpenChange={setIsTransferOpen}>
-            <DialogTrigger asChild>
-              <Button
-                className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-md shadow-md shadow-blue-200"
-                disabled={isDisposed}
-              >
-                <ArrowRightLeft className="w-4 h-4 mr-2" />
-                Initiate Transfer
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Initiate Asset Transfer</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>From Branch</Label>
-                  <Input value={`${asset.branchName} (${asset.branchCode})`} disabled />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Select Region</Label>
-                  <select
-                    className="w-full px-3 py-2 border border-border rounded-lg"
-                    value={selectedRegion}
-                    onChange={(e) => {
-                      setSelectedRegion(e.target.value);
-                      setSelectedBranch("");
-                    }}
-                  >
-                    <option value="">-- Select Region --</option>
-                    {managers.map((m: any) => (
-                      <option key={m.id} value={m.username}>{m.username} ({m.branchCode})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Select Branch</Label>
-                  <select
-                    className="w-full px-3 py-2 border border-border rounded-lg"
-                    value={selectedBranch}
-                    onChange={(e) => setSelectedBranch(e.target.value)}
-                    disabled={!selectedRegion}
-                  >
-                    <option value="">-- Select Branch --</option>
-                    {branchesForRegion.map((b: any) => (
-                      <option key={b.id} value={b.branchCode}>{b.username} ({b.branchCode})</option>
-                    ))}
-                  </select>
-                </div>
-
+          {/* Initiate Transfer - Only for Active assets */}
+          {asset.status === 'Active' && (
+            <Dialog open={isTransferOpen} onOpenChange={setIsTransferOpen}>
+              <DialogTrigger asChild>
                 <Button
-                  className="w-full"
-                  disabled={!selectedBranch || isGeneratingPass}
-                  onClick={handleTransfer}
+                  className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-md shadow-md shadow-blue-200"
+                  disabled={isDisposed}
                 >
-                  {isGeneratingPass ? "Creating..." : "Initiate Transfer"}
+                  <ArrowRightLeft className="w-4 h-4 mr-2" />
+                  Initiate Transfer
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Initiate Asset Transfer</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>From Branch</Label>
+                    <Input value={`${asset.branchName} (${asset.branchCode})`} disabled />
+                  </div>
 
-          {/* Generate Pass (Temporary) */}
+                  <div className="space-y-2">
+                    <Label>To Branch (Destination)</Label>
+                    <select
+                      className="w-full px-3 py-2 border border-border rounded-lg"
+                      value={selectedBranch}
+                      onChange={(e) => setSelectedBranch(e.target.value)}
+                    >
+                      <option value="">-- Select Branch --</option>
+                      {availableBranches.map((b: any) => (
+                        <option key={b.code} value={b.code}>{b.name} ({b.code})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Transfer Reason</Label>
+                    <Textarea
+                      placeholder="Provide reason for transfer..."
+                      value={transferReason}
+                      onChange={(e) => setTransferReason(e.target.value)}
+                    />
+                  </div>
+
+                  <Button
+                    className="w-full"
+                    disabled={!selectedBranch || !transferReason || isInitiatingTransfer}
+                    onClick={handleTransfer}
+                  >
+                    {isInitiatingTransfer ? "Initiating..." : "Initiate Transfer"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Generate Pass (Temporary) - Always available */}
           <Dialog open={isPassOpen} onOpenChange={setIsPassOpen}>
             <DialogTrigger asChild>
               <Button
                 variant="outline"
                 className="h-12 border-2"
-                disabled={isDisposed}
               >
                 <Ticket className="w-4 h-4 mr-2" />
                 Gate Pass
@@ -298,54 +285,103 @@ export default function AssetDetail() {
             </DialogContent>
           </Dialog>
 
+          {/* Print Tag - Always available */}
           <Button variant="outline" className="h-12 border-dashed border-2">
             <QrCode className="w-4 h-4 mr-2" />
             Print Tag
           </Button>
 
-          {/* Initiate Disposal */}
-          <Dialog open={isDisposalOpen} onOpenChange={setIsDisposalOpen}>
-            <DialogTrigger asChild>
-              <Button
-                variant="outline"
-                className="h-12 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                disabled={isDisposed}
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Initiate Disposal
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Initiate Asset Disposal</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
-                  This will add the asset to your disposal cart. A manager must approve before disposal is finalized.
-                </div>
-                <div className="space-y-2">
-                  <Label>Asset</Label>
-                  <Input value={`${asset.name} (${asset.tagNumber})`} disabled />
-                </div>
-                <div className="space-y-2">
-                  <Label>Reason for Disposal</Label>
-                  <Textarea
-                    placeholder="e.g., End of life, Damaged beyond repair, Obsolete"
-                    value={disposalReason}
-                    onChange={(e) => setDisposalReason(e.target.value)}
-                  />
-                </div>
+          {/* Initiate Disposal - Only for Active assets */}
+          {asset.status === 'Active' && (
+            <Dialog open={isDisposalOpen} onOpenChange={setIsDisposalOpen}>
+              <DialogTrigger asChild>
                 <Button
-                  className="w-full bg-red-600 hover:bg-red-700"
-                  disabled={isAddingToDisposal}
-                  onClick={handleDisposal}
+                  variant="outline"
+                  className="h-12 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  disabled={isDisposed}
                 >
-                  {isAddingToDisposal ? "Adding..." : "Add to Disposal Cart"}
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Initiate Disposal
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Initiate Asset Disposal</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+                    This will add the asset to your disposal cart. A manager must approve before disposal is finalized.
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Asset</Label>
+                    <Input value={`${asset.name} (${asset.tagNumber})`} disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Reason for Disposal</Label>
+                    <Textarea
+                      placeholder="e.g., End of life, Damaged beyond repair, Obsolete"
+                      value={disposalReason}
+                      onChange={(e) => setDisposalReason(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    className="w-full bg-red-600 hover:bg-red-700"
+                    disabled={isAddingToDisposal}
+                    onClick={handleDisposal}
+                  >
+                    {isAddingToDisposal ? "Adding..." : "Add to Disposal Cart"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
+
+        {/* Transfer Details - Show for assets with transfer history */}
+        {((asset as any).fromBranch || asset.status === 'Transferred' || asset.transferStatus === 'Transferred') && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-200 shadow-sm">
+            <h3 className="font-semibold text-lg flex items-center gap-2 mb-4 text-blue-900">
+              <ArrowRightLeft className="w-5 h-5 text-blue-600" />
+              Transfer Details
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div className="flex justify-between border-b border-blue-200 pb-2">
+                  <span className="text-blue-700 font-medium">From Branch</span>
+                  <span className="font-semibold text-blue-900">
+                    {(asset as any).fromBranch ? `${(asset as any).fromBranch} (${(asset as any).fromBranchCode})` : (asset.initiatedBy || 'N/A')}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-blue-200 pb-2">
+                  <span className="text-blue-700 font-medium">To Branch</span>
+                  <span className="font-semibold text-blue-900">{asset.branchName} ({asset.branchCode})</span>
+                </div>
+                <div className="flex justify-between border-b border-blue-200 pb-2">
+                  <span className="text-blue-700 font-medium">Transfer Initiated</span>
+                  <span className="font-semibold text-blue-900">
+                    {asset.initiatedAt ? format(new Date(asset.initiatedAt), "PPp") : 'N/A'}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between border-b border-blue-200 pb-2">
+                  <span className="text-blue-700 font-medium">Approved By</span>
+                  <span className="font-semibold text-blue-900">{asset.approvedBy || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between border-b border-blue-200 pb-2">
+                  <span className="text-blue-700 font-medium">Approved Date & Time</span>
+                  <span className="font-semibold text-blue-900">
+                    {asset.approvedAt ? format(new Date(asset.approvedAt), "PPp") : 'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-blue-200 pb-2">
+                  <span className="text-blue-700 font-medium">Reason</span>
+                  <span className="font-semibold text-blue-900">{asset.reason || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Details Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

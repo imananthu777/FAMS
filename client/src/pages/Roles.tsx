@@ -18,8 +18,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, ShieldCheck } from "lucide-react";
+import { Loader2, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
+import { Layout } from "@/components/Layout";
 
 const PERMISSION_GROUPS = [
     {
@@ -100,6 +101,27 @@ export default function Roles() {
         },
     });
 
+    const deleteRoleMutation = useMutation({
+        mutationFn: async (roleId: number) => {
+            const res = await apiRequest("DELETE", `/api/roles/${roleId}`);
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
+            toast({
+                title: "Role Deleted",
+                description: "Role has been successfully deleted.",
+            });
+        },
+        onError: (error: Error) => {
+            toast({
+                title: "Error",
+                description: error.message,
+                variant: "destructive",
+            });
+        },
+    });
+
     const canManageRoles = user?.role === "HO" || roles?.find(r => r.name === user?.role)?.manageRoles === "true";
 
     if (isLoading) {
@@ -111,85 +133,103 @@ export default function Roles() {
     }
 
     return (
-        <div className="container mx-auto p-8 max-w-7xl">
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight mb-2">Role Management</h1>
-                    <p className="text-muted-foreground">
-                        Manage system roles and permissions.
-                    </p>
+        <Layout>
+            <div className="container mx-auto p-8 max-w-7xl">
+                <div className="flex items-center justify-between mb-8">
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight mb-2">Role Management</h1>
+                        <p className="text-muted-foreground">
+                            Manage system roles and permissions.
+                        </p>
+                    </div>
+                    {canManageRoles && (
+                        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                            <DialogTrigger asChild>
+                                <Button>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Create Role
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                                <RoleForm
+                                    onSubmit={(data) => createRoleMutation.mutate(data)}
+                                    isSubmitting={createRoleMutation.isPending}
+                                />
+                            </DialogContent>
+                        </Dialog>
+                    )}
                 </div>
-                {canManageRoles && (
-                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                        <DialogTrigger asChild>
-                            <Button>
-                                <Plus className="mr-2 h-4 w-4" />
-                                Create Role
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                            <RoleForm
-                                onSubmit={(data) => createRoleMutation.mutate(data)}
-                                isSubmitting={createRoleMutation.isPending}
-                            />
-                        </DialogContent>
-                    </Dialog>
-                )}
-            </div>
 
-            <div className="grid gap-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>System Roles</CardTitle>
-                        <CardDescription>
-                            List of all defined roles and their capabilities.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="border rounded-md">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Role Name</TableHead>
-                                        <TableHead>Description</TableHead>
-                                        <TableHead>Permissions Overview</TableHead>
-                                        {/* <TableHead>Actions</TableHead> */}
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {roles?.map((role) => (
-                                        <TableRow key={role.id}>
-                                            <TableCell className="font-medium">
-                                                <div className="flex items-center gap-2">
-                                                    <ShieldCheck className="h-4 w-4 text-primary" />
-                                                    {role.name}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>{role.description}</TableCell>
-                                            <TableCell>
-                                                <div className="flex flex-wrap gap-1">
-                                                    {getPermissionSummary(role)}
-                                                </div>
-                                            </TableCell>
-                                            {/* <TableCell>
-                        <Button variant="ghost" size="sm" disabled>Edit</Button>
-                      </TableCell> */}
-                                        </TableRow>
-                                    ))}
-                                    {!roles?.length && (
+                <div className="grid gap-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>System Roles</CardTitle>
+                            <CardDescription>
+                                List of all defined roles and their capabilities.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="border rounded-md">
+                                <Table>
+                                    <TableHeader>
                                         <TableRow>
-                                            <TableCell colSpan={3} className="h-24 text-center">
-                                                No roles found.
-                                            </TableCell>
+                                            <TableHead>Role Name</TableHead>
+                                            <TableHead>Description</TableHead>
+                                            <TableHead>Permissions Overview</TableHead>
+                                            {canManageRoles && <TableHead>Actions</TableHead>}
                                         </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </CardContent>
-                </Card>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {roles?.map((role) => (
+                                            <TableRow key={role.id}>
+                                                <TableCell className="font-medium">
+                                                    <div className="flex items-center gap-2">
+                                                        <ShieldCheck className="h-4 w-4 text-primary" />
+                                                        {role.name}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>{role.description}</TableCell>
+                                                <TableCell>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {getPermissionSummary(role)}
+                                                    </div>
+                                                </TableCell>
+                                                {canManageRoles && (
+                                                    <TableCell>
+                                                        {role.name !== "HO" && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                onClick={() => {
+                                                                    if (confirm(`Are you sure you want to delete the role "${role.name}"?`)) {
+                                                                        deleteRoleMutation.mutate(role.id);
+                                                                    }
+                                                                }}
+                                                                disabled={deleteRoleMutation.isPending}
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        )}
+                                                    </TableCell>
+                                                )}
+                                            </TableRow>
+                                        ))}
+                                        {!roles?.length && (
+                                            <TableRow>
+                                                <TableCell colSpan={3} className="h-24 text-center">
+                                                    No roles found.
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
-        </div>
+        </Layout>
     );
 }
 

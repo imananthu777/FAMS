@@ -5,8 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { User, Mail, Building, Shield, Settings, LogOut } from "lucide-react";
 
+import { useUsers } from "@/hooks/use-users";
+
 export default function Profile() {
   const { user, logout } = useAuthStore();
+  const { data: users } = useUsers();
+
+  // Find full user details
+  const fullUser = users?.find(u => u.username === user?.username);
 
   if (!user) return null;
 
@@ -38,7 +44,7 @@ export default function Profile() {
                 <p className="font-medium">{user.branchCode || "Head Office"}</p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-4 p-3 rounded-xl bg-secondary/30">
               <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">
                 <Shield className="w-5 h-5" />
@@ -48,17 +54,29 @@ export default function Profile() {
                 <p className="font-medium">{user.role}</p>
               </div>
             </div>
+
+            {fullUser && (fullUser as any).ManagerID && (
+              <div className="flex items-center gap-4 p-3 rounded-xl bg-secondary/30">
+                <div className="w-10 h-10 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Reporting Manager</p>
+                  <p className="font-medium">{(fullUser as any).ManagerID}</p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <div className="space-y-3">
-          <Button variant="outline" className="w-full h-12 justify-start rounded-xl" onClick={() => {}}>
+          <Button variant="outline" className="w-full h-12 justify-start rounded-xl" onClick={() => { }}>
             <Settings className="mr-2 w-5 h-5" />
             App Settings
           </Button>
-          <Button 
-            variant="destructive" 
-            className="w-full h-12 justify-start rounded-xl bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 border-none shadow-none" 
+          <Button
+            variant="destructive"
+            className="w-full h-12 justify-start rounded-xl bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 border-none shadow-none"
             onClick={logout}
           >
             <LogOut className="mr-2 w-5 h-5" />

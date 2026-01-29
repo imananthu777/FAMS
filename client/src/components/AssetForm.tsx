@@ -46,20 +46,26 @@ export function AssetForm({ defaultValues, onSubmit, isLoading, onCancel }: Asse
   const availableBranches = useMemo(() => {
     if (!currentUser) return [];
 
-    if (currentUser.role === "Admin") {
-      // Admins see all distinct branch codes/names from users list
+    if (currentUser.role === "Admin" || currentUser.role === "HO") {
+      // Admins/HO see all distinct branch codes/names from users list
       const branches = users
-        .filter(u => u.role === "Branch User")
+        // Filter out Admin/HO users to avoid duplication/confusion, or keep them if they represent branches
+        .filter(u => u.branchCode && u.branchCode !== "HO")
+        // Exclude Managers (Regions)
+        .filter(u => !u.role.toLowerCase().includes("manager"))
         .map(u => ({ name: u.username, code: String(u.branchCode) }));
+
       // Add HO as a choice
       branches.unshift({ name: "Head Office", code: "HO" });
-      return branches;
+
+      // Remove duplicates based on code
+      return Array.from(new Map(branches.map(item => [item.code, item])).values());
     }
 
     if (currentUser.role?.includes("Manager")) {
       // Managers see branches reporting to them
       const branches = users
-        .filter(u => String(u.ReportingTo) === String(currentUser.branchCode))
+        .filter(u => String((u as any).ReportingTo) === String(currentUser.branchCode))
         .map(u => ({ name: u.username, code: String(u.branchCode) }));
 
       // Also add manager's own branch

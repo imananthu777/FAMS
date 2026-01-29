@@ -62,7 +62,10 @@ export function TransactionHistory({ contractId }: TransactionHistoryProps) {
                                     variant={bill.paymentStatus === 'Paid' ? 'default' : 'secondary'}
                                     className="text-xs"
                                 >
-                                    {bill.paymentStatus || 'Unpaid'}
+                                    {bill.approvalStatus === 'Hold' ? 'Hold (Postponed)' :
+                                        bill.approvalStatus === 'Rejected' ? 'Rejected' :
+                                            bill.approvalStatus === 'SentForFinance' ? 'Sent to Finance' :
+                                                bill.paymentStatus || 'Unpaid'}
                                 </Badge>
                             </div>
                         </div>

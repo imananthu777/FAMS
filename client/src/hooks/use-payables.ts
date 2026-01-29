@@ -181,7 +181,8 @@ export function useRejectBill() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['/api/payables/bills'] });
-            queryClient.invalidateQueries({ queryKey: ['/api/payables/pending-approvals'] });
+            queryClient.refetchQueries({ queryKey: ['/api/payables/pending-approvals'] });
+            queryClient.refetchQueries({ queryKey: ['/api/dashboard/pending-actions'] });
             toast({ title: "Success", description: "Bill rejected" });
         },
         onError: (error: any) => {
@@ -208,11 +209,11 @@ export function usePayBill() {
     const { toast } = useToast();
 
     return useMutation({
-        mutationFn: async ({ billId, paidBy, modeOfPayment }: { billId: number; paidBy: string; modeOfPayment: string }) => {
+        mutationFn: async ({ billId, paidBy, modeOfPayment, utrNumber, paymentDate }: { billId: number; paidBy: string; modeOfPayment: string; utrNumber: string; paymentDate?: string }) => {
             const res = await fetch(`/api/payables/bills/${billId}/pay`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paidBy, modeOfPayment }),
+                body: JSON.stringify({ paidBy, modeOfPayment, utrNumber, paymentDate }),
             });
             if (!res.ok) {
                 const err = await res.json();
@@ -223,7 +224,9 @@ export function usePayBill() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['/api/payables/bills'] });
             queryClient.invalidateQueries({ queryKey: ['/api/payables/unpaid-bills'] });
-            queryClient.invalidateQueries({ queryKey: ['/api/payables/pending-approvals'] });
+            // Use refetchQueries to force immediate update on active observers
+            queryClient.refetchQueries({ queryKey: ['/api/payables/pending-approvals'] });
+            queryClient.refetchQueries({ queryKey: ['/api/dashboard/pending-actions'] });
             toast({ title: "Success", description: "Bill marked as paid" });
         },
         onError: (error: any) => {
@@ -236,4 +239,33 @@ export function usePayBill() {
 export function usePayables(branchCode?: string, type?: string) {
     // Legacy support if needed, but better to migrate
     return useAgreements(branchCode);
+}
+
+export function useUpdateBillStatus() {
+    const queryClient = useQueryClient();
+    const { toast } = useToast();
+
+    return useMutation({
+        mutationFn: async ({ billId, status, updatedBy, remarks, ...extras }: { billId: number; status: string; updatedBy: string; remarks?: string;[key: string]: any }) => {
+            const res = await fetch(`/api/payables/bills/${billId}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, updatedBy, remarks, ...extras }),
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.message || "Failed to update bill status");
+            }
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['/api/payables/bills'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/payables/unpaid-bills'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/payables/pending-approvals'] });
+            toast({ title: "Success", description: "Bill status updated" });
+        },
+        onError: (error: any) => {
+            toast({ title: "Error", description: error.message, variant: "destructive" });
+        }
+    });
 }

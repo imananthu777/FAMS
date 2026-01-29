@@ -1,6 +1,6 @@
 import { Layout } from "@/components/Layout";
 import { useAuthStore } from "@/hooks/use-auth";
-import { useAgreementsForRole, useCreateAgreement, usePendingBillsForApproval, useApproveBill, useRejectBill, useUnpaidBills, usePayBill } from "@/hooks/use-payables";
+import { useAgreementsForRole, useCreateAgreement, useRejectBill, useUnpaidBills, usePayBill, useUpdateBillStatus } from "@/hooks/use-payables";
 import { useUsers } from "@/hooks/use-users";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { TransactionHistory } from "@/components/TransactionHistory";
 import {
     FileText, Plus, ChevronDown, ChevronUp, Receipt, Eye, History,
     Folder, ChevronRight, ArrowLeft, CheckCircle, XCircle, Clock,
-    Wallet, CreditCard, AlertTriangle, Filter
+    Wallet, CreditCard, AlertTriangle, Filter, ArrowRightLeft
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -41,6 +41,18 @@ export default function Payables() {
     const [payDialogOpen, setPayDialogOpen] = useState(false);
     const [selectedBillForPay, setSelectedBillForPay] = useState<any>(null);
     const [paymentMode, setPaymentMode] = useState('');
+    const [utrNumber, setUtrNumber] = useState('');
+    const [paymentDate, setPaymentDate] = useState('');
+
+    // Postpone Dialog State
+    const [postponeDialogOpen, setPostponeDialogOpen] = useState(false);
+    const [selectedBillForPostpone, setSelectedBillForPostpone] = useState<any>(null);
+    const [postponeDate, setPostponeDate] = useState("");
+    const [postponeReason, setPostponeReason] = useState("");
+
+    // View Details dialog state
+    const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
+    const [selectedBillDetails, setSelectedBillDetails] = useState<any>(null);
 
     // Bills management state (Admin/HO)
     const [showBillsView, setShowBillsView] = useState(false);
@@ -55,15 +67,11 @@ export default function Payables() {
         user?.role || undefined,
         user?.branchCode || undefined
     );
-    const { data: pendingBills, isLoading: loadingPendingBills } = usePendingBillsForApproval(
-        user?.role || undefined,
-        user?.branchCode || undefined
-    );
     const { data: unpaidBills, isLoading: loadingUnpaidBills } = useUnpaidBills();
     const createAgreement = useCreateAgreement();
-    const approveBill = useApproveBill();
     const rejectBill = useRejectBill();
     const payBill = usePayBill();
+    const updateBillStatus = useUpdateBillStatus();
 
     // Determine if user is Admin/HO (can see bills management)
     const isAdminOrHO = user?.role === 'Admin' || user?.role === 'HO';
@@ -189,14 +197,7 @@ export default function Payables() {
         }
     };
 
-    const handleApproveBill = async (bill: any) => {
-        if (!user) return;
-        await approveBill.mutateAsync({
-            billId: bill.id,
-            username: user.username,
-            userId: user.id
-        });
-    };
+
 
     const handleRejectBill = async () => {
         if (!user || !selectedBillForReject || !rejectionReason.trim()) return;
@@ -209,6 +210,28 @@ export default function Payables() {
         setRejectDialogOpen(false);
         setSelectedBillForReject(null);
         setRejectionReason('');
+        // Also close the view details dialog if open
+        setViewDetailsOpen(false);
+        setSelectedBillDetails(null);
+    };
+
+    const handlePostponeBill = () => {
+        if (!selectedBillForPostpone || !postponeDate || !user) return;
+
+        updateBillStatus.mutate({
+            billId: selectedBillForPostpone.id,
+            status: 'Hold',
+            updatedBy: user.username,
+            remarks: `Postponed until ${postponeDate}. ${postponeReason}`,
+            paymentScheduledDate: postponeDate
+        } as any, {
+            onSuccess: () => {
+                setPostponeDialogOpen(false);
+                setSelectedBillForPostpone(null);
+                setPostponeDate("");
+                setPostponeReason("");
+            }
+        });
     };
 
     const openRejectDialog = (bill: any) => {
@@ -273,56 +296,7 @@ export default function Payables() {
         </div>
     );
 
-    // Pending Bills Approval Section
-    const PendingApprovalsSection = () => {
-        if (!isHierarchyUser || !pendingBills || pendingBills.length === 0) return null;
 
-        return (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                    <Clock className="w-5 h-5 text-orange-600" />
-                    <h3 className="font-semibold text-orange-800">Pending Bill Approvals ({pendingBills.length})</h3>
-                </div>
-                <div className="space-y-2">
-                    {pendingBills.slice(0, 5).map((bill: any) => (
-                        <div key={bill.id} className="bg-white rounded-lg p-3 border border-orange-100 flex items-center justify-between">
-                            <div>
-                                <p className="font-medium text-sm">{bill.billNo} - ₹{bill.amount?.toLocaleString()}</p>
-                                <p className="text-xs text-muted-foreground">
-                                    {bill.vendorName} | {bill.branchCode} | {bill.billDate}
-                                </p>
-                            </div>
-                            <div className="flex gap-2">
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-green-600 border-green-300 hover:bg-green-50"
-                                    onClick={() => handleApproveBill(bill)}
-                                    disabled={approveBill.isPending}
-                                >
-                                    <CheckCircle className="w-4 h-4 mr-1" />
-                                    Approve
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-red-600 border-red-300 hover:bg-red-50"
-                                    onClick={() => openRejectDialog(bill)}
-                                    disabled={rejectBill.isPending}
-                                >
-                                    <XCircle className="w-4 h-4 mr-1" />
-                                    Reject
-                                </Button>
-                            </div>
-                        </div>
-                    ))}
-                    {pendingBills.length > 5 && (
-                        <p className="text-xs text-orange-600 text-center">+ {pendingBills.length - 5} more pending approvals</p>
-                    )}
-                </div>
-            </div>
-        );
-    };
 
     // Pay bill handler
     const handlePayBill = async () => {
@@ -330,11 +304,19 @@ export default function Payables() {
         await payBill.mutateAsync({
             billId: selectedBillForPay.id,
             paidBy: user.username,
-            modeOfPayment: paymentMode
+            modeOfPayment: paymentMode,
+            utrNumber: utrNumber,
+            paymentDate: paymentDate || new Date().toISOString()
         });
         setPayDialogOpen(false);
         setSelectedBillForPay(null);
         setPaymentMode('');
+        setUtrNumber('');
+        setPaymentDate('');
+
+        // Also close details if open
+        setViewDetailsOpen(false);
+        setSelectedBillDetails(null);
     };
 
     const openPayDialog = (bill: any) => {
@@ -344,16 +326,18 @@ export default function Payables() {
 
     // Calculate priority from due date
     const calculatePriority = (bill: any) => {
+        // Use dueDate if available, otherwise billDate
+        const targetDateStr = bill.dueDate || bill.billDate;
+        if (!targetDateStr) return { priority: 'Upcoming', color: 'bg-green-100 text-green-700', sortOrder: 2 };
+
         const today = new Date();
-        const currentDay = today.getDate();
+        today.setHours(0, 0, 0, 0); // Normalize today
+        const targetDate = new Date(targetDateStr);
+        targetDate.setHours(0, 0, 0, 0);
 
-        // Get bill due date from agreement
-        const billDueDay = parseInt(bill.dueDate) || parseInt(bill.billDate) || 10;
-
-        // Simple logic: if today's date > due date, it's overdue
-        if (currentDay > billDueDay) {
+        if (targetDate < today) {
             return { priority: 'Overdue', color: 'bg-red-100 text-red-700', sortOrder: 0 };
-        } else if (currentDay === billDueDay) {
+        } else if (targetDate.getTime() === today.getTime()) {
             return { priority: 'Due Today', color: 'bg-orange-100 text-orange-700', sortOrder: 1 };
         } else {
             return { priority: 'Upcoming', color: 'bg-green-100 text-green-700', sortOrder: 2 };
@@ -397,15 +381,20 @@ export default function Payables() {
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                        <Wallet className="w-5 h-5 text-blue-600" />
-                        <h3 className="font-semibold text-blue-800">
-                            Bills Management ({sortedUnpaidBills.length} unpaid)
-                        </h3>
+                        <div className="bg-blue-100 p-2 rounded-lg">
+                            <Wallet className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-blue-800">
+                                Bills Management
+                            </h3>
+                            <p className="text-xs text-blue-600">{sortedUnpaidBills.length} unpaid bills</p>
+                        </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-blue-600" />
                         <Select value={billsBranchFilter} onValueChange={setBillsBranchFilter}>
-                            <SelectTrigger className="w-40 h-8 text-sm">
+                            <SelectTrigger className="w-40 h-8 text-sm bg-white border-blue-200">
                                 <SelectValue placeholder="All Branches" />
                             </SelectTrigger>
                             <SelectContent>
@@ -416,50 +405,64 @@ export default function Payables() {
                             </SelectContent>
                         </Select>
                         <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
                             onClick={() => setShowBillsView(!showBillsView)}
-                            className="text-blue-600"
+                            className="text-blue-600 hover:bg-blue-100"
                         >
-                            {showBillsView ? 'Collapse' : 'Expand'}
+                            {showBillsView ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </Button>
                     </div>
                 </div>
 
                 {showBillsView && (
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                    <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                         {loadingUnpaidBills ? (
                             <Skeleton className="h-16 w-full" />
                         ) : sortedUnpaidBills.length === 0 ? (
-                            <p className="text-center text-blue-600 py-4">No unpaid bills found</p>
+                            <p className="text-center text-blue-600 py-4 text-sm bg-white/50 rounded-lg">No unpaid bills found</p>
                         ) : (
                             sortedUnpaidBills.map((bill: any) => {
                                 const { priority, color } = calculatePriority(bill);
                                 return (
-                                    <div key={bill.id} className="bg-white rounded-lg p-3 border border-blue-100 flex items-center justify-between">
+                                    <div key={bill.id} className="bg-white rounded-lg p-3 border border-blue-100 hover:shadow-sm transition-shadow flex items-center justify-between group">
                                         <div className="flex-1">
-                                            <div className="flex items-center gap-2">
-                                                <p className="font-medium text-sm">{bill.billNo}</p>
-                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="font-semibold text-sm">{bill.billNo}</span>
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold ${color}`}>
                                                     {priority}
                                                 </span>
+                                                {bill.approvalStatus === 'Rejected' && (
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold bg-red-100 text-red-700">
+                                                        Rejected
+                                                    </span>
+                                                )}
                                             </div>
-                                            <p className="text-xs text-muted-foreground">
-                                                {bill.vendorName} | ₹{bill.amount?.toLocaleString()} | Branch: {bill.branchCode}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                                Due Day: {bill.dueDate || bill.billDate || 'N/A'} | Bill Date: {bill.billDate}
-                                            </p>
+                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                                <div className="flex items-center gap-1">
+                                                    <span className="font-medium text-foreground">{bill.vendorName}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1 justify-end">
+                                                    <span className="font-medium text-foreground">₹{bill.amount?.toLocaleString()}</span>
+                                                </div>
+                                                <div>Branch: {bill.branchCode}</div>
+                                                <div className="text-right">Due: {bill.dueDate || bill.billDate}</div>
+                                            </div>
                                         </div>
-                                        <Button
-                                            size="sm"
-                                            className="bg-green-600 hover:bg-green-700"
-                                            onClick={() => openPayDialog(bill)}
-                                            disabled={payBill.isPending}
-                                        >
-                                            <CreditCard className="w-4 h-4 mr-1" />
-                                            Pay
-                                        </Button>
+                                        <div className="ml-4 pl-4 border-l border-gray-100">
+                                            <Button
+                                                size="sm"
+                                                variant="secondary"
+                                                className="hover:bg-blue-100 text-blue-700"
+                                                onClick={() => {
+                                                    setSelectedBillDetails(bill);
+                                                    setViewDetailsOpen(true);
+                                                }}
+                                            >
+                                                <Eye className="w-4 h-4 mr-1" />
+                                                View Details
+                                            </Button>
+                                        </div>
                                     </div>
                                 );
                             })
@@ -491,8 +494,7 @@ export default function Payables() {
                     )}
                 </div>
 
-                {/* Pending Approvals for Manager/Admin */}
-                <PendingApprovalsSection />
+
 
                 {/* Bills Management for Admin/HO */}
                 <BillsManagementSection />
@@ -812,6 +814,52 @@ export default function Payables() {
                 )}
             </div>
 
+
+            {/* Postpone Dialog */}
+            <Dialog open={postponeDialogOpen} onOpenChange={setPostponeDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Postpone Bill</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            When postponing a bill, status will show as "Hold". It will reappear as Pending on the scheduled date.
+                        </p>
+                        {selectedBillForPostpone && (
+                            <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                                <p><strong>Bill:</strong> {selectedBillForPostpone.billNo}</p>
+                            </div>
+                        )}
+                        <div>
+                            <Label>Postpone Until *</Label>
+                            <Input
+                                type="date"
+                                value={postponeDate}
+                                onChange={(e) => setPostponeDate(e.target.value)}
+                                min={new Date().toISOString().split('T')[0]}
+                            />
+                        </div>
+                        <div>
+                            <Label>Remarks</Label>
+                            <Textarea
+                                value={postponeReason}
+                                onChange={(e) => setPostponeReason(e.target.value)}
+                                placeholder="Reason for postponing..."
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPostponeDialogOpen(false)}>Cancel</Button>
+                        <Button
+                            onClick={handlePostponeBill}
+                            disabled={!postponeDate || updateBillStatus.isPending}
+                        >
+                            {updateBillStatus.isPending ? 'Updating...' : 'Confirm Postpone'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* Rejection Dialog */}
             <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
                 <DialogContent>
@@ -872,21 +920,39 @@ export default function Payables() {
                                 <p><strong>Branch:</strong> {selectedBillForPay.branchCode}</p>
                             </div>
                         )}
-                        <div>
-                            <Label>Mode of Payment *</Label>
-                            <Select value={paymentMode} onValueChange={setPaymentMode}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select payment mode" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="Cash">Cash</SelectItem>
-                                    <SelectItem value="Cheque">Cheque</SelectItem>
-                                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                                    <SelectItem value="NEFT">NEFT</SelectItem>
-                                    <SelectItem value="RTGS">RTGS</SelectItem>
-                                    <SelectItem value="UPI">UPI</SelectItem>
-                                </SelectContent>
-                            </Select>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="col-span-2">
+                                <Label>Mode of Payment *</Label>
+                                <Select value={paymentMode} onValueChange={setPaymentMode}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select payment mode" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Cash">Cash</SelectItem>
+                                        <SelectItem value="Cheque">Cheque</SelectItem>
+                                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                                        <SelectItem value="NEFT">NEFT</SelectItem>
+                                        <SelectItem value="RTGS">RTGS</SelectItem>
+                                        <SelectItem value="UPI">UPI</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <Label>UTR/Ref Number *</Label>
+                                <Input
+                                    value={utrNumber}
+                                    onChange={(e) => setUtrNumber(e.target.value)}
+                                    placeholder="Enter UTR/Ref No"
+                                />
+                            </div>
+                            <div>
+                                <Label>Payment Date</Label>
+                                <Input
+                                    type="date"
+                                    value={paymentDate}
+                                    onChange={(e) => setPaymentDate(e.target.value)}
+                                />
+                            </div>
                         </div>
                     </div>
                     <DialogFooter>
@@ -896,11 +962,119 @@ export default function Payables() {
                         <Button
                             className="bg-green-600 hover:bg-green-700"
                             onClick={handlePayBill}
-                            disabled={!paymentMode || payBill.isPending}
+                            disabled={!paymentMode || !utrNumber || payBill.isPending}
                         >
                             {payBill.isPending ? 'Processing...' : 'Confirm Payment'}
                         </Button>
                     </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* View Details Dialog */}
+            <Dialog open={viewDetailsOpen} onOpenChange={setViewDetailsOpen}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Bill Details</DialogTitle>
+                    </DialogHeader>
+                    {selectedBillDetails && (
+                        <div className="space-y-6">
+                            {/* Header Status */}
+                            <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl">
+                                <div>
+                                    <h4 className="text-lg font-bold">#{selectedBillDetails.billNo}</h4>
+                                    <p className="text-sm text-muted-foreground">{selectedBillDetails.branchCode}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-xs text-muted-foreground">Status</p>
+                                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${selectedBillDetails.paymentStatus === 'Paid' ? 'bg-green-100 text-green-700' :
+                                        selectedBillDetails.approvalStatus === 'Rejected' ? 'bg-red-100 text-red-700' :
+                                            selectedBillDetails.approvalStatus === 'Postponed' ? 'bg-yellow-100 text-yellow-700' :
+                                                'bg-blue-100 text-blue-700'
+                                        }`}>
+                                        {selectedBillDetails.paymentStatus === 'Paid' ? 'PAID' : selectedBillDetails.approvalStatus}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Details Grid */}
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
+                                <div>
+                                    <Label className="text-muted-foreground text-xs">Vendor</Label>
+                                    <p className="font-medium">{selectedBillDetails.vendorName}</p>
+                                </div>
+                                <div>
+                                    <Label className="text-muted-foreground text-xs">Amount</Label>
+                                    <p className="font-medium text-lg">₹{selectedBillDetails.amount?.toLocaleString()}</p>
+                                </div>
+                                <div>
+                                    <Label className="text-muted-foreground text-xs">Agreement ID</Label>
+                                    <p className="font-medium">{selectedBillDetails.contractId}</p>
+                                </div>
+                                <div>
+                                    <Label className="text-muted-foreground text-xs">Bill Date</Label>
+                                    <p className="font-medium">{selectedBillDetails.billDate}</p>
+                                </div>
+                                <div>
+                                    <Label className="text-muted-foreground text-xs">Due Date</Label>
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-medium">{selectedBillDetails.dueDate || 'N/A'}</p>
+                                        {calculatePriority(selectedBillDetails).priority === 'Overdue' && (
+                                            <AlertTriangle className="w-3 h-3 text-red-500" />
+                                        )}
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label className="text-muted-foreground text-xs">Bill Type</Label>
+                                    <p className="font-medium">{selectedBillDetails.billType}</p>
+                                </div>
+                            </div>
+
+                            {/* Actions (Admin Only) */}
+                            {isAdminOrHO && selectedBillDetails.paymentStatus !== 'Paid' && (
+                                <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-100">
+                                    <Button
+                                        className="bg-green-600 hover:bg-green-700 flex-1"
+                                        onClick={() => openPayDialog(selectedBillDetails)}
+                                    >
+                                        <CreditCard className="w-4 h-4 mr-2" />
+                                        Pay Bill
+                                    </Button>
+
+                                    <Button
+                                        variant="outline"
+                                        className="text-red-600 border-red-200 hover:bg-red-50 flex-1"
+                                        onClick={() => openRejectDialog(selectedBillDetails)}
+                                    >
+                                        <XCircle className="w-4 h-4 mr-2" />
+                                        Reject
+                                    </Button>
+                                </div>
+                            )}
+
+                            {/* Payment Info if Paid */}
+                            {selectedBillDetails.paymentStatus === 'Paid' && (
+                                <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                                    <h5 className="font-semibold text-green-800 text-sm mb-2 flex items-center gap-2">
+                                        <CheckCircle className="w-4 h-4" /> Payment Completed
+                                    </h5>
+                                    <div className="grid grid-cols-2 gap-4 text-xs text-green-900">
+                                        <div>
+                                            <span className="opacity-75">Paid By:</span> {selectedBillDetails.paidBy}
+                                        </div>
+                                        <div>
+                                            <span className="opacity-75">Paid Date:</span> {selectedBillDetails.paymentDate}
+                                        </div>
+                                        <div>
+                                            <span className="opacity-75">Mode:</span> {selectedBillDetails.modeOfPayment}
+                                        </div>
+                                        <div>
+                                            <span className="opacity-75">UTR/Ref:</span> {selectedBillDetails.utrNumber || 'N/A'}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
         </Layout>

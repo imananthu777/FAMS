@@ -9,7 +9,7 @@ export function useAssets(filters?: { role?: string; branchCode?: string }) {
   const queryParams = new URLSearchParams();
   if (filters?.role) queryParams.append("role", filters.role);
   if (filters?.branchCode) queryParams.append("branchCode", filters.branchCode);
-  
+
   const path = `${api.assets.list.path}?${queryParams.toString()}`;
 
   return useQuery({
@@ -132,5 +132,61 @@ export function useSearchAssets(query: string) {
       return api.assets.search.responses[200].parse(await res.json());
     },
     enabled: query.length > 2,
+  });
+}
+
+// Initiate transfer
+export function useInitiateTransfer() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({ id, toLocation, reason, initiatedBy }: { id: number, toLocation: string, reason: string, initiatedBy: string }) => {
+      const res = await fetch(`/api/assets/${id}/transfer/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toLocation, reason, initiatedBy }),
+      });
+
+      if (!res.ok) throw new Error("Failed to initiate transfer");
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [api.assets.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.assets.get.path, data.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transfers/pending'] });
+      toast({ title: "Success", description: "Transfer initiated and waiting for approval" });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+}
+
+// Approve transfer
+export function useApproveTransfer() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({ id, approvedBy }: { id: number, approvedBy: string }) => {
+      const res = await fetch(`/api/assets/${id}/transfer/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvedBy }),
+      });
+
+      if (!res.ok) throw new Error("Failed to approve transfer");
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [api.assets.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.assets.get.path, data.original?.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/transfers/pending'] });
+      toast({ title: "Success", description: "Transfer approved successfully" });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
   });
 }
