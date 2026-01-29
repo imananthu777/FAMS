@@ -244,23 +244,23 @@ export default function Dashboard() {
 
   return (
     <Layout title="Dashboard">
-      <div className="space-y-10 pb-12">
+      <div className="space-y-6 md:space-y-10 pb-12">
         {/* Top Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          <div className="lg:col-span-2 space-y-10">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-10">
+          <div className="lg:col-span-2 space-y-6 md:space-y-10">
             {/* Welcome Liquid Card */}
-            <div className="liquid-glass rounded-[3rem] p-10 relative overflow-hidden group">
+            <div className="liquid-glass rounded-[2rem] md:rounded-[3rem] p-6 md:p-10 relative overflow-hidden group">
               <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-indigo-500/10 to-transparent opacity-50" />
-              <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
-                <div className="text-center md:text-left">
-                  <h2 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">
-                    Welcome back, <span className="text-primary">{user?.username}</span>
+              <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-8">
+                <div className="text-left w-full">
+                  <h2 className="text-2xl md:text-4xl font-extrabold text-gray-900 mb-2 md:mb-3 tracking-tight">
+                    Welcome back,<br className="md:hidden" /> <span className="text-primary">{user?.username}</span>
                   </h2>
-                  <p className="text-base font-medium text-gray-600 leading-relaxed max-w-lg">
+                  <p className="text-sm md:text-base font-medium text-gray-600 leading-relaxed max-w-lg">
                     System status is <span className="text-emerald-600 font-bold">Optimal</span>. You have {notifications?.filter((n: any) => n.isRead === 'false').length || 0} alerts and {payablesSummary.overdue} pending items requiring immediate attention.
                   </p>
                 </div>
-                <div className="flex -space-x-4">
+                <div className="hidden md:flex -space-x-4">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="w-14 h-14 rounded-full border-4 border-white bg-gray-100 flex items-center justify-center text-gray-400 shadow-xl overflow-hidden">
                       <UserCircle className="w-10 h-10" />
@@ -274,7 +274,7 @@ export default function Dashboard() {
             </div>
 
             {/* Critical Actions Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
               {/* Bills Widget */}
               {(user?.role === 'Admin' || user?.role === 'HO') && pendingBills && pendingBills.length > 0 && (
                 <div className="liquid-glass rounded-[2.5rem] p-8 border-orange-100 shadow-orange-500/5">
