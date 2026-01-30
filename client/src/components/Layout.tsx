@@ -121,7 +121,7 @@ export function Layout({ children, title, action }: LayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex flex-col md:flex-row">
       {/* Mesh Background */}
       <div className="fixed inset-0 pointer-events-none opacity-40 mesh-bg blur-3xl z-0" />
 
@@ -133,7 +133,7 @@ export function Layout({ children, title, action }: LayoutProps) {
       </aside>
 
       {/* Main Content Area - Flex grows to fill remaining space */}
-      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-0">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <header className="sticky top-0 z-40 px-4 md:px-8 py-4 md:py-6 bg-background/50 backdrop-blur-3xl flex items-center justify-between border-b border-gray-100/50">
           <div className="flex items-center gap-3 md:gap-6">
@@ -174,31 +174,6 @@ export function Layout({ children, title, action }: LayoutProps) {
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-4 left-4 right-4 liquid-glass rounded-[2rem] p-2 z-50 border-white/40 shadow-2xl">
-        <div className="flex justify-around items-center h-14">
-          {navItems.slice(0, 4).map((item: any) => {
-            const isActive = location === item.path;
-            return (
-              <Link key={item.path} href={item.path}>
-                <div
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-1 rounded-2xl transition-all duration-500 cursor-pointer w-14 h-14 relative",
-                    isActive ? "bg-primary text-white scale-110 shadow-lg shadow-primary/30" : "text-gray-400"
-                  )}
-                >
-                  <item.icon className={cn("w-6 h-6")} strokeWidth={isActive ? 2.5 : 2} />
-                  {item.badge && (
-                    <span className="absolute top-1 right-1 bg-destructive text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
-                      {item.badge}
-                    </span>
-                  )}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
     </div>
   );
 }
